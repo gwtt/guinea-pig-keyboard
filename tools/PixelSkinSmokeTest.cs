@@ -47,10 +47,10 @@ internal static class PixelSkinSmokeTest
             IDictionary buttons = (IDictionary)buttonsField.GetValue(settings);
             object restoredSkin = windowType.GetProperty("ActiveSkin", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(owner, null);
             Check((string)skinType.GetField("Id").GetValue(restoredSkin) == "pixel-golden-white", "legacy profile migrated");
-            Check(buttons.Count == 14, "skin button count");
+            Check(buttons.Keys.Cast<string>().Count(id => id.StartsWith("pixel-", StringComparison.Ordinal)) == 14, "pixel skin button count");
+            Check(buttons.Keys.Cast<string>().Count(id => id.StartsWith("drawn-", StringComparison.Ordinal)) == 6, "drawn skin button count");
             foreach (DictionaryEntry entry in buttons)
             {
-                Check(((string)entry.Key).StartsWith("pixel-", StringComparison.Ordinal), "pixel-only button");
                 Button button = (Button)entry.Value;
                 button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 object active = windowType.GetProperty("ActiveSkin", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(owner, null);
@@ -65,9 +65,17 @@ internal static class PixelSkinSmokeTest
             Check((string)skinType.GetField("Id").GetValue(oldAlias) == "pixel-longhair-buff", "old alias");
             object fallback = fromId.Invoke(null, new object[] { "unknown-skin-id" });
             Check((string)skinType.GetField("Id").GetValue(fallback) == "pixel-tricolor", "unknown fallback");
+            Check((string)skinType.GetField("Id").GetValue(fromId.Invoke(null, new object[] { null })) == "pixel-tricolor", "first launch selects pixel tricolor");
+            ((Button)buttons["drawn-tricolor"]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            object scene = Field(owner, "scene");
+            scene.GetType().GetProperty("Skin").SetValue(scene, fallback, null);
+            ready.SetValue(owner, false);
+            restore.Invoke(owner, null);
+            object restored = scene.GetType().GetProperty("Skin").GetValue(scene, null);
+            Check((string)skinType.GetField("Id").GetValue(restored) == "drawn-tricolor", "saved drawn appearance restores");
             CheckRenderLifecycle(assembly);
             CheckNetworkCompatibility(assembly);
-            Console.WriteLine("PASS: settings labels and roundtrips, 14 pixel skin buttons, wheel animation, render lifecycle, legacy aliases, peer names and counters");
+            Console.WriteLine("PASS: settings labels and roundtrips, 14 pixel and 6 drawn skin buttons, wheel animation, render lifecycle, legacy aliases, peer names and counters");
             return 0;
         }
         catch (Exception ex)
@@ -150,11 +158,40 @@ internal static class PixelSkinSmokeTest
             Check((bool)Field(scene, "rightButton"), "pixel click forwarding");
             sceneType.GetProperty("ShowKeyLabels").SetValue(scene, false, null);
             Check(!(bool)scene.GetType().GetProperty("ShowKeyLabels").GetValue(scene, null), "label forwarding");
+            CheckDrawnDesk(scene, skinType);
             host.RootVisual = null;
             Pump();
             Check(!((DispatcherTimer)Field(scene, "gaze")).IsEnabled
                 && !((DispatcherTimer)Field(scene, "animation")).IsEnabled, "detached timers stopped");
         }
+    }
+
+    private static void CheckDrawnDesk(FrameworkElement scene, Type skinType)
+    {
+        Type type = scene.GetType();
+        var skin = type.GetProperty("Skin");
+        object pixel = skin.GetValue(scene, null);
+        skin.SetValue(scene, skinType.GetMethod("FromId").Invoke(null, new object[] { "drawn-silver-agouti" }), null);
+        const BindingFlags instance = BindingFlags.NonPublic | BindingFlags.Instance;
+        var poseAt = type.GetMethod("DrawnPose", instance);
+        object rest = poseAt.Invoke(scene, new object[] { 0.0 });
+        Type pose = rest.GetType();
+        Rect body = (Rect)pose.GetField("Body").GetValue(rest);
+        Check(body == new Rect(135, 123, 129, 85), "手绘身体恢复原尺寸与位置");
+        type.GetField("mouseGrip", instance).SetValue(scene, 1.0);
+        object held = poseAt.Invoke(scene, new object[] { 0.0 });
+        Rect leaning = (Rect)pose.GetField("Body").GetValue(held);
+        Point near = (Point)pose.GetField("LeftTip").GetValue(held);
+        Point far = (Point)pose.GetField("RightTip").GetValue(held);
+        Check(leaning.Left == 66 && near == new Point(79.5, 236.5) && far == new Point(153, 227),
+            "握鼠时身体靠近鼠标，另一只前爪撑在键盘边");
+        type.GetMethod("PressKey").Invoke(scene, new object[] { 0x38 });
+        object hand = Field(scene, "right");
+        Point alt = (Point)hand.GetType().GetField("Target").GetValue(hand);
+        Check(alt == new Point(281.742, 209.608), "左 Alt 落在手绘键帽中心");
+        skin.SetValue(scene, pixel, null);
+        Check((Point)Field(scene, "mousePosition") == new Point(31, 243) && (double)Field(scene, "mouseGrip") == 0,
+            "切回像素外观后使用对应的鼠标位置");
     }
 
     private static void CheckDozing(FrameworkElement scene)

@@ -252,8 +252,8 @@ namespace WheekKeys
 
         private static UIElement BuildSwatch(PetSkin skin)
         {
-            var image = new Image { Source = PixelPetScene.Portrait(skin.PixelCoatId), Width = 14, Height = 14, Stretch = Stretch.Uniform };
-            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
+            var image = new Image { Source = PixelPetScene.Portrait(skin), Width = 14, Height = 14, Stretch = Stretch.Uniform };
+            RenderOptions.SetBitmapScalingMode(image, skin.IsDrawn ? BitmapScalingMode.HighQuality : BitmapScalingMode.NearestNeighbor);
             return image;
         }
 

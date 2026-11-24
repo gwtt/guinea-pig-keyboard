@@ -73,6 +73,10 @@ internal static class FriendDesktopSmokeTest
             grip.SetValue(remote, 1.0); remote.InvalidateVisual(); Pump(friend);
             Check(CheckNameAboveHead(friend, remote, label).Left < restingName.Left - 10, "name moves with the animated head");
             grip.SetValue(remote, 0.0); remote.InvalidateVisual(); Pump(friend);
+            read.Invoke(network,new object[]{"WS1|"+id+"|drawn-tricolor|1",1.2});
+            Call(stage,"Update",network,1.2,false,true); Pump(owner);
+            Check(Field(remote,"drawnArt")!=null,"friend can switch to the drawn appearance");
+            CheckNameAboveHead(friend, remote, label);
             read.Invoke(network,new object[]{"WA1|"+id+"|1|k30",1.2});
             Call(stage,"Update",network,1.2,true,false); Pump(owner);
             object left=Field(remote,"left"),right=Field(remote,"right");

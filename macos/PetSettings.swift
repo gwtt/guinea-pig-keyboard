@@ -23,7 +23,8 @@ final class PetSettingsViewController: NSViewController {
     private let sogouSwitch = NSButton(checkboxWithTitle: "使用搜狗输入法时自动隐藏", target: nil, action: nil)
     private let networkSwitch = NSButton(checkboxWithTitle: "开启局域网联机", target: nil, action: nil)
     private let tabs = NSSegmentedControl(labels: ["桌宠", "联机"], trackingMode: .selectOne, target: nil, action: nil)
-    private let petPage = NSView()
+    private let petScroll = NSScrollView()
+    private let petPage = FlippedView()
     private let lanPage = NSView()
     private let createRoom = NSButton(title: "创建房间", target: nil, action: nil)
     private let joinCode = NSTextField()
@@ -84,7 +85,12 @@ final class PetSettingsViewController: NSViewController {
         tabs.action = #selector(changeTab)
         tabs.selectedSegment = 0
         add(tabs, x: 18, top: 68, width: 280, height: 27, to: root)
-        add(petPage, x: 0, top: 100, width: 316, height: 352, to: root)
+        petScroll.hasVerticalScroller = true
+        petScroll.drawsBackground = false
+        petScroll.borderType = .noBorder
+        petPage.frame = NSRect(x: 0, y: 0, width: 316, height: 420)
+        petScroll.documentView = petPage
+        add(petScroll, x: 0, top: 100, width: 316, height: 352, to: root)
         add(lanPage, x: 0, top: 100, width: 316, height: 352, to: root)
         lanPage.isHidden = true
 
@@ -263,7 +269,7 @@ final class PetSettingsViewController: NSViewController {
         for skin in PetSkin.all {
             guard let button = skinButtons[skin.id] else { continue }
             let selected = skin.id == skinID
-            button.title = String(skin.name.dropFirst(2))
+            button.title = skin.isDrawn ? skin.name : String(skin.name.dropFirst(2))
             button.toolTip = selected ? skin.name + "（当前）" : skin.name
             button.layer?.borderWidth = selected ? 1.5 : 0.5
             button.layer?.borderColor = mutedBrown.withAlphaComponent(selected ? 0.8 : 0.3).cgColor
@@ -307,7 +313,7 @@ final class PetSettingsViewController: NSViewController {
     }
 
     @objc private func changeTab() {
-        petPage.isHidden = tabs.selectedSegment != 0
+        petScroll.isHidden = tabs.selectedSegment != 0
         lanPage.isHidden = tabs.selectedSegment != 1
     }
 

@@ -16,13 +16,20 @@ namespace WheekKeys
             new PetSkin("pixel-longhair-buff", "像素长毛浅金棕", "longhair-buff", "longhair"),
             new PetSkin("pixel-longhair-cream", "像素长毛奶油", "longhair-cream", "longhair"),
             new PetSkin("pixel-longhair-chocolate", "像素长毛巧克力", "longhair-chocolate", "longhair"),
-            new PetSkin("pixel-longhair-californian", "像素长毛加州", "longhair-californian", "longhair")
+            new PetSkin("pixel-longhair-californian", "像素长毛加州", "longhair-californian", "longhair"),
+            Drawn("tricolor", "手绘三花"),
+            Drawn("californian", "手绘白加州"),
+            Drawn("gold-white", "手绘黄白英短"),
+            Drawn("teddy", "手绘美泰"),
+            Drawn("silver-agouti", "手绘雕灰"),
+            Drawn("longhair", "手绘长毛猪")
         };
 
         public readonly string Id;
         public readonly string Name;
         public readonly string PixelCoatId;
         public readonly string NetworkId;
+        public bool IsDrawn { get { return PixelCoatId == null; } }
 
         private PetSkin(string id, string name, string pixelCoatId, string networkId)
         {
@@ -30,6 +37,11 @@ namespace WheekKeys
             Name = name;
             PixelCoatId = pixelCoatId;
             NetworkId = networkId;
+        }
+
+        private static PetSkin Drawn(string coatId, string name)
+        {
+            return new PetSkin("drawn-" + coatId, name, null, coatId);
         }
 
         public static PetSkin FromId(string id) { return Find(id) ?? All[0]; }

@@ -12,6 +12,9 @@ import AppKit
     precondition(parsed.0 == remoteID && parsed.1.keys == 123 && parsed.1.clicks == 45)
     precondition(parsed.1.skin == "pixel-longhair-gold-white", "Old peer coat was not mapped")
     precondition(PetSkin.named("gold-white").id == "pixel-golden-white", "Old profile coat was not mapped")
+    precondition(PetSkin.all.first?.id == "pixel-tricolor", "Pixel appearance must remain the default")
+    precondition(PetSkin.named("drawn-tricolor").name == "手绘三花")
+    precondition(PetSkin.named("longhair").id == "pixel-longhair-gold-white", "Legacy network coat was not preserved")
     for invalid in ["WK1|\(ownID)|longhair|1|2", "WK1|\(remoteID)|unknown|1|2",
                     "WK1|\(remoteID)|longhair|-1|2", "WK1|\(remoteID)|longhair|9223372036854775808|2",
                     "WK1|\(remoteID)|longhair|1|2\n", valid + String(repeating: "0", count: 129)] {
@@ -57,8 +60,11 @@ import AppKit
     }
     precondition(tabs.selectedSegment == 0, "Settings must start on pet tab")
     settingsView.layoutSubtreeIfNeeded()
-    let skinButtons = descendants(settingsView).compactMap { $0 as? NSButton }.filter { $0.identifier?.rawValue.hasPrefix("pixel-") == true }
-    precondition(skinButtons.count == 14 && skinButtons.allSatisfy { settingsView.bounds.contains(settingsView.convert($0.bounds, from: $0)) })
+    let skinButtons = descendants(settingsView).compactMap { $0 as? NSButton }.filter {
+        let id = $0.identifier?.rawValue ?? ""
+        return id.hasPrefix("pixel-") || id.hasPrefix("drawn-")
+    }
+    precondition(skinButtons.count == 20 && skinButtons.allSatisfy { settingsView.bounds.contains(settingsView.convert($0.bounds, from: $0)) })
     tabs.selectedSegment = 1
     tabs.sendAction(tabs.action, to: tabs.target)
     let firstPeer = LocalPeers.Peer(skin: "pixel-longhair-gold-white", keys: 12_345, clicks: 100_000_000, seen: 10)
@@ -117,17 +123,74 @@ import AppKit
         return png
     }
 
+    func regionFingerprint(x: Range<Int>, y: Range<Int>) -> [UInt8] {
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            fatalError("No native bitmap context")
+        }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        var result: [UInt8] = []
+        let scaleX = CGFloat(bitmap.pixelsWide) / 400
+        let scaleY = CGFloat(bitmap.pixelsHigh) / 308
+        for row in stride(from: y.lowerBound, to: y.upperBound, by: 2) {
+            for column in stride(from: x.lowerBound, to: x.upperBound, by: 2) {
+                let pixelX = Int((CGFloat(column) * scaleX).rounded())
+                let pixelY = Int((CGFloat(row) * scaleY).rounded())
+                guard let color = bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB) else {
+                    fatalError("Cannot sample desktop artwork")
+                }
+                var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+                color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+                result.append(contentsOf: [red, green, blue, alpha].map {
+                    UInt8(clamping: Int(($0 * 255).rounded()))
+                })
+            }
+        }
+        return result
+    }
+
     var idleFrames = Set<Data>()
     let root = Bundle.main.resourceURL!
     for skin in PetSkin.all {
-        for file in [skin.body, skin.paw, "keyboard.png", "mouse.png", "mouth-peep.png", "mouth-yawn.png"] {
+        var files = [skin.body, skin.paw,
+                     skin.isDrawn ? "drawn-keyboard.png" : "keyboard.png",
+                     skin.isDrawn ? "drawn-mouse.png" : "mouse.png",
+                     "mouth-peep.png", "mouth-yawn.png"]
+        if skin.isDrawn { files.append(skin.networkID + "-eyes.png") }
+        for file in files {
             precondition(NSImage(contentsOf: root.appendingPathComponent(file)) != nil, "Missing sprite: \(file)")
         }
         view.selectSkin(skin.id)
         let idle = snapshot()
         precondition(idleFrames.insert(idle).inserted, "Identical appearance: \(skin.id)")
+        if skin.isDrawn {
+            precondition(skin.portrait(size: NSSize(width: 38, height: 40)) != nil, "Missing drawn portrait: \(skin.id)")
+        }
         print("Rendered \(skin.id)")
     }
+    view.selectSkin("pixel-californian")
+    let pixelKeyboard = regionFingerprint(x: 315..<347, y: 0..<308)
+    let pixelMouse = regionFingerprint(x: 70..<90, y: 0..<308)
+    view.selectSkin("drawn-tricolor")
+    let drawnKeyboard = regionFingerprint(x: 315..<347, y: 0..<308)
+    let drawnMouse = regionFingerprint(x: 70..<90, y: 0..<308)
+    precondition(pixelKeyboard != drawnKeyboard, "Keyboard artwork did not switch with skin")
+    precondition(pixelMouse != drawnMouse, "Mouse artwork did not switch with skin")
+    view.selectSkin("pixel-californian")
+    precondition(regionFingerprint(x: 315..<347, y: 0..<308) == pixelKeyboard, "Keyboard cache crossed skin switch")
+    precondition(regionFingerprint(x: 70..<90, y: 0..<308) == pixelMouse, "Mouse cache crossed skin switch")
+
+    view.selectSkin("drawn-tricolor")
+    let drawnIdle = snapshot()
+    view.pressKey(0)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.075))
+    precondition(snapshot() != drawnIdle, "Drawn skin key press did not animate")
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.42))
+    let drawnMouseIdle = snapshot()
+    view.moveMouse(dx: 140, dy: 160)
+    view.clickMouse(right: false)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.085))
+    precondition(snapshot() != drawnMouseIdle, "Drawn skin mouse grip did not animate")
+
     view.selectSkin("pixel-californian")
     let idle = snapshot()
     view.pressKey(0) // ANSI A

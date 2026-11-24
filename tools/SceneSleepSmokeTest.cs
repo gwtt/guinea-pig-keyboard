@@ -180,7 +180,7 @@ internal static class SceneSleepSmokeTest
                 host.RootVisual = null; Pump();
                 Check(!Timer(root, "gaze") && !Timer(root, "animation"), "unloaded timers stop");
             }
-            Console.WriteLine("PASS: 14 pixel coats sleep/wake, gentle mouse reach/click/recovery, Z rendering, independent peers, loaded/unloaded timers");
+            Console.WriteLine("PASS: pixel and drawn coats sleep/wake, gentle mouse reach/click/recovery, Z rendering, independent peers, loaded/unloaded timers");
             return 0;
         }
         catch (Exception e) { Console.Error.WriteLine(e); return 1; }

@@ -6,6 +6,7 @@ struct PetSkin {
     let body: String
     let paw: String
     let networkID: String
+    let isDrawn: Bool
     let furColor: CGColor
     let inkColor: CGColor
     private let eyeColor: CGColor
@@ -24,7 +25,13 @@ struct PetSkin {
         PetSkin("longhair-buff", "像素长毛浅金棕", paw: "white", networkID: "longhair", fur: 0xE6C391),
         PetSkin("longhair-cream", "像素长毛奶油", paw: "cream", networkID: "longhair", fur: 0xF5DEAF),
         PetSkin("longhair-chocolate", "像素长毛巧克力", paw: "chocolate", networkID: "longhair", fur: 0xA17B63, ink: 0x4A3127),
-        PetSkin("longhair-californian", "像素长毛加州", paw: "tricolor", networkID: "longhair")
+        PetSkin("longhair-californian", "像素长毛加州", paw: "tricolor", networkID: "longhair"),
+        PetSkin("drawn-tricolor", "手绘三花", body: "guinea-pig.png", paw: "paw.png", networkID: "tricolor", fur: 0xFAE4CB, ink: 0x513A27, isDrawn: true),
+        PetSkin("drawn-californian", "手绘白加州", body: "californian-body.png", paw: "californian-paw.png", networkID: "californian", fur: 0xFAE4CB, ink: 0x513A27, isDrawn: true),
+        PetSkin("drawn-gold-white", "手绘黄白英短", body: "gold-white-body.png", paw: "gold-white-paw.png", networkID: "gold-white", fur: 0xFAE4CB, ink: 0x513A27, isDrawn: true),
+        PetSkin("drawn-teddy", "手绘美泰", body: "teddy-body.png", paw: "teddy-paw.png", networkID: "teddy", fur: 0xA86946, ink: 0x513A27, isDrawn: true),
+        PetSkin("drawn-silver-agouti", "手绘雕灰", body: "silver-agouti-body.png", paw: "silver-agouti-paw.png", networkID: "silver-agouti", fur: 0xA19086, ink: 0x513A27, isDrawn: true),
+        PetSkin("drawn-longhair", "手绘长毛猪", body: "longhair-body.png", paw: "longhair-paw.png", networkID: "longhair", fur: 0xFAE4CB, ink: 0x513A27, isDrawn: true)
     ]
 
     private static let legacyIDs = [
@@ -40,13 +47,14 @@ struct PetSkin {
     private static let closedEye: [UInt8] = [0, 0, 0b100001, 0b110011, 0b011110, 0]
     private static let glint = color(0xFFF0D5)
 
-    private init(_ id: String, _ name: String, coat: String? = nil, paw: String, networkID: String,
-                 fur: UInt32 = 0xFFFAF1, ink: UInt32 = 0x624737, darkEyes: Bool = false) {
-        self.id = "pixel-" + id
+    private init(_ id: String, _ name: String, coat: String? = nil, body: String? = nil, paw: String, networkID: String,
+                 fur: UInt32 = 0xFFFAF1, ink: UInt32 = 0x624737, darkEyes: Bool = false, isDrawn: Bool = false) {
+        self.id = isDrawn ? id : "pixel-" + id
         self.name = name
-        self.body = "guinea-pig-\(coat ?? id).png"
-        self.paw = "paw-\(paw).png"
+        self.body = body ?? "guinea-pig-\(coat ?? id).png"
+        self.paw = isDrawn ? paw : "paw-\(paw).png"
         self.networkID = networkID
+        self.isDrawn = isDrawn
         self.furColor = Self.color(fur)
         self.inkColor = Self.color(ink)
         self.eyeColor = Self.color(darkEyes ? 0x302722 : ink)
@@ -94,9 +102,29 @@ struct PetSkin {
         return NSImage(size: size, flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.saveGState()
-            context.interpolationQuality = .none
+            context.interpolationQuality = self.isDrawn ? .high : .none
+            if self.isDrawn {
+                context.translateBy(x: 2 * rect.midX, y: 0)
+                context.scaleBy(x: -1, y: 1)
+            }
             image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            self.drawEyes(in: rect, frame: 0, context: context)
+            if self.isDrawn {
+                let atlasName = self.networkID + "-eyes"
+                if let atlasURL = Bundle.main.url(forResource: atlasName, withExtension: "png"),
+                   let atlas = NSImage(contentsOf: atlasURL),
+                   let cg = atlas.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                   let eye = cg.cropping(to: CGRect(x: 0, y: 0, width: cg.width / 4, height: cg.height / 3)) {
+                    let eyeRect = CGRect(x: rect.minX + rect.width * 0.58, y: rect.minY + rect.height * 0.25,
+                                         width: rect.width * 0.22, height: rect.height * 0.30)
+                    context.saveGState()
+                    context.translateBy(x: eyeRect.minX, y: eyeRect.maxY)
+                    context.scaleBy(x: 1, y: -1)
+                    context.draw(eye, in: CGRect(origin: .zero, size: eyeRect.size))
+                    context.restoreGState()
+                }
+            } else {
+                self.drawEyes(in: rect, frame: 0, context: context)
+            }
             context.restoreGState()
             return true
         }

@@ -57,6 +57,7 @@ internal static class MouthSceneSmokeTest
             Type pet = assembly.GetType("WheekKeys.PixelPetScene", true), skins = assembly.GetType("WheekKeys.PetSkin", true);
             foreach (object skin in (Array)skins.GetField("All").GetValue(null))
             {
+                if ((bool)skins.GetProperty("IsDrawn").GetValue(skin, null)) continue;
                 object scene = Activator.CreateInstance(pet, true); pet.GetProperty("Skin").SetValue(scene, skin, null);
                 object renderer = Renderer(scene); bool pixel = true;
                 string id = (string)skins.GetField("Id").GetValue(skin);

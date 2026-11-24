@@ -352,7 +352,7 @@ namespace WheekKeys
 
         private static ImageSource Portrait(PetSkin skin)
         {
-            return PixelPetScene.Portrait(skin.PixelCoatId);
+            return PixelPetScene.Portrait(skin);
         }
 
         private static Grid RosterGrid()

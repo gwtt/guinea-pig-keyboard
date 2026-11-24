@@ -12,7 +12,7 @@ using System.Windows.Threading;
 
 namespace WheekKeys
 {
-    internal sealed class PixelPetScene : FrameworkElement
+    internal sealed partial class PixelPetScene : FrameworkElement
     {
         public const double SceneWidth = 400;
         public const double SceneHeight = 308;
@@ -26,6 +26,7 @@ namespace WheekKeys
         private readonly Dictionary<string, EyeArt> coatEyes = new Dictionary<string, EyeArt>();
         private readonly Dictionary<string, BitmapSource> coatPaws = new Dictionary<string, BitmapSource>();
         private EyeArt Eyes;
+        private DrawnPetArt drawnArt;
         private BitmapSource Paw;
         private Brush ForelegFill;
         private Brush ForelegEdge;
@@ -43,10 +44,10 @@ namespace WheekKeys
         private readonly DispatcherTimer gaze;
         private readonly bool followCursor;
         // These names refer to the viewer's side. The guinea pig faces the viewer.
-        private readonly Stroke left = new Stroke(new Point(183, 201));
-        private readonly Stroke right = new Stroke(new Point(239, 202));
-        private Point mousePosition = new Point(31, 243);
-        private Point mouseDestination = new Point(31, 243);
+        private Stroke left;
+        private Stroke right;
+        private Point mousePosition;
+        private Point mouseDestination;
         private double lastFrame;
         private double lastMouseUse = double.NegativeInfinity;
         private double lastClick = double.NegativeInfinity;
@@ -84,8 +85,6 @@ namespace WheekKeys
             Width = SceneWidth;
             Height = SceneHeight;
             Skin = PetSkin.All[0];
-            RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.NearestNeighbor);
-            RenderOptions.SetEdgeMode(this, EdgeMode.Aliased);
             animation = new DispatcherTimer(DispatcherPriority.Render);
             animation.Interval = TimeSpan.FromMilliseconds(24);
             animation.Tick += delegate
@@ -168,7 +167,8 @@ namespace WheekKeys
             }
             double age = now - blinkStarted;
             int frame = 0;
-            if (age < 40) frame = 1;
+            if (drawnArt != null) frame = BlinkFrame(age);
+            else if (age < 40) frame = 1;
             else if (age < 120) frame = 2;
             else if (age < BlinkDuration) frame = 1;
             if (frame == blinkFrame) return;
@@ -178,7 +178,7 @@ namespace WheekKeys
 
         private void UpdateGaze()
         {
-            if (!followCursor) return;
+            if (!followCursor || drawnArt != null) return;
             CursorPoint cursor;
             if (!GetCursorPos(out cursor) || PresentationSource.FromVisual(this) == null) return;
             LookAt(PointFromScreen(new Point(cursor.X, cursor.Y)));
@@ -186,7 +186,9 @@ namespace WheekKeys
 
         public void LookAt(Point cursor)
         {
-            Vector offset = Eyes.Offset(cursor - new Vector(SceneOffsetX, 0), bodyBounds);
+            if (drawnArt != null) return;
+            cursor -= new Vector(SceneOffsetX, 0);
+            Vector offset = Eyes.Offset(cursor, bodyBounds);
             if (offset == gazeOffset) return;
             gazeOffset = offset;
             InvalidateVisual();
@@ -213,24 +215,11 @@ namespace WheekKeys
             set
             {
                 if (value == null || value == skin) return;
-                CoatArt coat = CoatArt.Find(value.PixelCoatId);
-                if (!coatEyes.TryGetValue(coat.Id, out Eyes))
-                {
-                    Color eyeColor = coat.Id == "black-white" || coat.Id == "tricolor"
-                        || coat.Id == "longhair-tricolor" || coat.Id == "longhair-black-white"
-                        ? Color.FromRgb(48, 39, 34) : coat.Ink;
-                    BitmapSource body = coat.BodyAsset == null ? coat.Body(BodySource) : Sprite(coat.BodyAsset);
-                    Eyes = new EyeArt(body, false, eyeColor);
-                    coatEyes.Add(coat.Id, Eyes);
-                    coatPaws.Add(coat.Id, coat.Paw(PawSource));
-                }
-                Paw = coatPaws[coat.Id];
-                var fill = new SolidColorBrush(coat.Fur);
-                var edge = new SolidColorBrush(coat.Ink);
-                fill.Freeze();
-                edge.Freeze();
-                ForelegFill = fill;
-                ForelegEdge = edge;
+                if (skin == null || skin.IsDrawn != value.IsDrawn) ResetDeskPose(value.IsDrawn);
+                drawnArt = value.IsDrawn ? DrawnPetArt.For(value) : null;
+                if (!value.IsDrawn) ApplyPixelCoat(value.PixelCoatId);
+                RenderOptions.SetBitmapScalingMode(this, value.IsDrawn ? BitmapScalingMode.HighQuality : BitmapScalingMode.NearestNeighbor);
+                RenderOptions.SetEdgeMode(this, value.IsDrawn ? EdgeMode.Unspecified : EdgeMode.Aliased);
                 skin = value;
                 mouth.Reset(clock.Elapsed.TotalMilliseconds);
                 settlingMouse = pendingMouseClick = false;
@@ -240,9 +229,32 @@ namespace WheekKeys
             }
         }
 
-        internal static ImageSource Portrait(string coatId)
+        private void ApplyPixelCoat(string coatId)
         {
             CoatArt coat = CoatArt.Find(coatId);
+            if (!coatEyes.TryGetValue(coat.Id, out Eyes))
+            {
+                Color eyeColor = coat.Id == "black-white" || coat.Id == "tricolor"
+                    || coat.Id == "longhair-tricolor" || coat.Id == "longhair-black-white"
+                    ? Color.FromRgb(48, 39, 34) : coat.Ink;
+                BitmapSource body = coat.BodyAsset == null ? coat.Body(BodySource) : Sprite(coat.BodyAsset);
+                Eyes = new EyeArt(body, false, eyeColor);
+                coatEyes.Add(coat.Id, Eyes);
+                coatPaws.Add(coat.Id, coat.Paw(PawSource));
+            }
+            Paw = coatPaws[coat.Id];
+            var fill = new SolidColorBrush(coat.Fur);
+            var edge = new SolidColorBrush(coat.Ink);
+            fill.Freeze();
+            edge.Freeze();
+            ForelegFill = fill;
+            ForelegEdge = edge;
+        }
+
+        internal static ImageSource Portrait(PetSkin skin)
+        {
+            if (skin.IsDrawn) return DrawnPetArt.For(skin).Portrait;
+            CoatArt coat = CoatArt.Find(skin.PixelCoatId);
             ImageSource cached;
             if (Portraits.TryGetValue(coat.Id, out cached)) return cached;
             BitmapSource image = coat.BodyAsset == null ? coat.Body(BodySource) : Sprite(coat.BodyAsset);
@@ -261,6 +273,7 @@ namespace WheekKeys
         public void PressKey(int scan)
         {
             RecordActivity();
+            if (drawnArt != null) { PressDrawnKey(scan); return; }
             bool onRight = PixelKeyboardArt.IsRight(scan);
             Stroke hand = onRight ? left : right;
             double now = clock.Elapsed.TotalMilliseconds;
@@ -283,8 +296,12 @@ namespace WheekKeys
         {
             if (dx == 0 && dy == 0) return;
             RecordActivity();
-            mouseDestination.X = Math.Max(10, Math.Min(46, mouseDestination.X + dx * 0.12));
-            mouseDestination.Y = Math.Max(210, Math.Min(270, mouseDestination.Y + dy * 0.12));
+            if (drawnArt != null) MoveDrawnMouse(dx, dy, clock.Elapsed.TotalMilliseconds);
+            else
+            {
+                mouseDestination.X = Math.Max(10, Math.Min(46, mouseDestination.X + dx * 0.12));
+                mouseDestination.Y = Math.Max(210, Math.Min(270, mouseDestination.Y + dy * 0.12));
+            }
             lastMouseUse = clock.Elapsed.TotalMilliseconds;
             double readiness = sleep.MotionReadiness(lastMouseUse);
             if (readiness < 0.999) slowMouseUntil = Math.Max(slowMouseUntil, lastMouseUse + 2400 * (1 - readiness));
@@ -304,7 +321,7 @@ namespace WheekKeys
                 settlingMouse = pendingMouseClick = true;
                 lastClick = double.NegativeInfinity;
             }
-            else { pendingMouseClick = false; lastClick = lastMouseUse; }
+            else { pendingMouseClick = false; lastClick = lastMouseUse + (drawnArt == null ? 0 : (1 - mouseGrip) * 110); }
             Wake();
         }
 
@@ -335,6 +352,11 @@ namespace WheekKeys
             double elapsed = Math.Max(0, now - lastFrame);
             lastFrame = now;
             double readiness = sleep.MotionReadiness(now);
+            if (drawnArt != null && !settlingMouse && !pendingMouseClick && now >= slowMouseUntil)
+            {
+                AdvanceDrawnMouse(now, elapsed);
+                return;
+            }
             mousePosition += (mouseDestination - mousePosition) * (1 - Math.Exp(-elapsed * readiness / (32 + (1 - readiness) * 170)));
             if ((mouseDestination - mousePosition).LengthSquared < 0.01) mousePosition = mouseDestination;
 
@@ -406,6 +428,13 @@ namespace WheekKeys
                 return result;
             }
 
+            public double DrawnRestWeight(double now)
+            {
+                if (!Active) return 1;
+                double age = Math.Max(0, now - Started);
+                return Smooth(Math.Max(0, Math.Min(1, (age - 102) / (SettleTime - 102))));
+            }
+
             public double BodyAttachment(double now)
             {
                 if (!Active) return 1;
@@ -436,9 +465,11 @@ namespace WheekKeys
             return Math.Min(1, Math.Min((age - 35) / 17, (155 - age) / 53));
         }
 
-        internal static BitmapImage Sprite(string name)
+        internal static BitmapImage Sprite(string name) { return LoadSprite("pixel-" + name); }
+
+        internal static BitmapImage LoadSprite(string name)
         {
-            using (Stream data = Assembly.GetExecutingAssembly().GetManifestResourceStream("pixel-" + name))
+            using (Stream data = Assembly.GetExecutingAssembly().GetManifestResourceStream(name))
             {
                 if (data == null) throw new FileNotFoundException("缺少桌宠图片", name);
                 BitmapImage sprite = new BitmapImage();
@@ -461,6 +492,7 @@ namespace WheekKeys
         protected override void OnRender(DrawingContext dc)
         {
             double now = clock.Elapsed.TotalMilliseconds;
+            if (drawnArt != null) { RenderDrawn(dc, now); return; }
             Point lp = MouseHand(left.Position(now), now);
             Point rp = right.Position(now);
             double l = left.Contact(now), r = right.Contact(now);
@@ -475,14 +507,13 @@ namespace WheekKeys
             startle = new Vector(Math.Round(startle.X), Math.Round(startle.Y));
             lp = new Point(Math.Round(lp.X + startle.X * 0.55), Math.Round(lp.Y + startle.Y * 0.55));
             rp = new Point(Math.Round(rp.X + startle.X * 0.55), Math.Round(rp.Y + startle.Y * 0.55));
-            Rect nextBody = new Rect(126 + lean + startle.X, 39 + dip + startle.Y, 174, 181);
-            if (nextBody != bodyBounds)
-            {
-                bodyBounds = nextBody;
-                if (HeadPositionChanged != null) HeadPositionChanged();
-            }
+            Rect nextBody = new Rect(126, 39, 174, 181);
+            nextBody.Offset(lean + startle.X, dip + startle.Y);
+            SetBodyBounds(nextBody);
             dc.PushTransform(new TranslateTransform(SceneOffsetX, 0));
-            Eyes.Draw(dc, bodyBounds, headOffset, sleep.IsWaking(now) ? 0 : blinkFrame, sleep.Expression(now), sleep.EyeScale(now), mouth.Frame);
+            int blink = sleep.IsWaking(now) ? 0 : blinkFrame;
+            double drowsiness = sleep.Expression(now);
+            Eyes.Draw(dc, bodyBounds, headOffset, blink, drowsiness, sleep.EyeScale(now), mouth.Frame);
             DrawMouse(dc, click);
             PixelKeyboardArt.Draw(dc, right.Scan, r, left.Scan, l);
             // Both forelegs start on the visible chest and pass in front of the desk.
@@ -497,6 +528,13 @@ namespace WheekKeys
             }
             sleep.Draw(dc, new Point(bodyBounds.Right + 5, bodyBounds.Top + 32), now, true);
             dc.Pop();
+        }
+
+        private void SetBodyBounds(Rect bounds)
+        {
+            if (bodyBounds == bounds) return;
+            bodyBounds = bounds;
+            if (HeadPositionChanged != null) HeadPositionChanged();
         }
 
         private static Point FollowBody(Point tip, double lean, double dip, double attached)
