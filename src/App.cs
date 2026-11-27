@@ -20,8 +20,8 @@ using Rectangle = System.Windows.Shapes.Rectangle;
 
 [assembly: AssemblyProduct("WheekKeys")]
 [assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8")]
-[assembly: AssemblyVersion("0.1.9.0")]
-[assembly: AssemblyInformationalVersion("0.1.9")]
+[assembly: AssemblyVersion("0.2.0.0")]
+[assembly: AssemblyInformationalVersion("0.2.0")]
 
 namespace WheekKeys
 {
