@@ -92,9 +92,18 @@ final class PetUpdateChecker {
 }
 
 final class PetSettingsViewController: NSViewController {
+    var onDropPack: ((URL) -> Void)?
+    var onFeedGrass: (() -> Void)?
     var onSelectSkin: ((String) -> Void)?
+    var onInstallSkin: (() -> Void)?
+    var onDeleteSkin: (() -> Void)?
+    var onOpacityChange: ((Double) -> Void)?
+    var onFullscreenChange: ((Bool) -> Void)?
+    var onSleepChange: ((Int) -> Void)?
+    var onDeskSkinChange: ((String) -> Void)?
     var onSaveNickname: ((String) -> Bool)?
     var onScaleChange: ((Double) -> Void)?
+    var onKeyboardGlowChange: ((Bool) -> Void)?
     var onShowLabelsChange: ((Bool) -> Void)?
     var onClickThroughChange: ((Bool) -> Void)?
     var onLoginAtStartupChange: ((Bool) -> Void)?
@@ -107,16 +116,28 @@ final class PetSettingsViewController: NSViewController {
     var onClose: (() -> Void)?
     var onDownloadUpdate: (() -> Void)?
 
-    private let skinButtons = Dictionary(uniqueKeysWithValues: PetSkin.all.map { ($0.id, NSButton()) })
+    private var skinButtons: [String: NSButton] = [:]
+    private var activeSkinID: String?
+    private lazy var removeSkinButton = controlButton("删除当前外观", action: #selector(deleteSkin))
+    private let skinCategory = NSSegmentedControl(labels: ["短毛", "长毛", "趴趴猪", "自定义"], trackingMode: .selectOne, target: nil, action: nil)
+    private let skinContainer = FlippedView()
+    private let opacitySlider = NSSlider(value: 1, minValue: 0.2, maxValue: 1, target: nil, action: nil)
+    private let sizeSlider = NSSlider(value: 0.58, minValue: 0.5, maxValue: 2, target: nil, action: nil)
+    private let fullscreenSwitch = NSButton(checkboxWithTitle: "全屏时自动隐藏", target: nil, action: nil)
+    private let sleepChoice = NSPopUpButton()
+    private let deskChoice = NSPopUpButton()
+    private let statsLabel = NSTextField(labelWithString: "")
     private let updateButton = NSButton(title: "更新到最新版本", target: nil, action: nil)
     private let scaleValue = NSTextField(labelWithString: "58%")
+    private let glowSwitch = NSButton(checkboxWithTitle: "连击键帽流光", target: nil, action: nil)
     private let labelsSwitch = NSButton(checkboxWithTitle: "显示按键气泡", target: nil, action: nil)
     private let clickThroughSwitch = NSButton(checkboxWithTitle: "鼠标穿透", target: nil, action: nil)
     private let loginSwitch = NSButton(checkboxWithTitle: "开机自启", target: nil, action: nil)
     private let loginMessage = NSTextField(labelWithString: "")
     private var loginRegistered = false
 
-    private let shareSwitch = NSButton(checkboxWithTitle: "同步按键和鼠标动作", target: nil, action: nil)
+    private let shareSwitch = NSButton(checkboxWithTitle: "同步敲击和点击动画", target: nil, action: nil)
+    private let privacyHint = NSTextField(wrappingLabelWithString: "具体键位只在本机处理。进入房间后会分享昵称、外观和累计次数。开启同步后，好友还会看到通用敲击和鼠标点击动画。")
     private let tabs = NSSegmentedControl(labels: ["桌宠", "联机", "QQ 群"], trackingMode: .selectOne, target: nil, action: nil)
     private let petScroll = NSScrollView()
     private let petPage = FlippedView()
@@ -135,6 +156,7 @@ final class PetSettingsViewController: NSViewController {
     private let publicDocument = FlippedView()
     private let directoryStatus = NSTextField(labelWithString: "正在连接…")
     private var shareTop: NSLayoutConstraint?
+    private var privacyTop: NSLayoutConstraint?
     private var directory: RoomDirectory?
     private var publicEntries: [RoomDirectory.Entry] = []
     private let networkState = NSTextField(labelWithString: "")
@@ -162,6 +184,7 @@ final class PetSettingsViewController: NSViewController {
         root.layer?.borderWidth = 1
         root.layer?.borderColor = NSColor(calibratedRed: 225 / 255, green: 214 / 255, blue: 194 / 255, alpha: 1).cgColor
         root.closeAction = { [weak self] in self?.onClose?() }
+        root.dropAction = { [weak self] in self?.onDropPack?($0) }
         view = root
 
         let avatar = NSImageView()
@@ -205,8 +228,7 @@ final class PetSettingsViewController: NSViewController {
         petScroll.hasVerticalScroller = true
         petScroll.drawsBackground = false
         petScroll.borderType = .noBorder
-        let controlOffset = CGFloat(((PetSkin.all.count + 2) / 3 - 2) * 34)
-        petPage.frame = NSRect(x: 0, y: 0, width: 316, height: 268 + controlOffset)
+        petPage.frame = NSRect(x: 0, y: 0, width: 316, height: 560)
         petScroll.documentView = petPage
         add(petScroll, x: 0, top: 100, width: 316, height: 352, to: root)
         add(roomPage, x: 0, top: 100, width: 316, height: 352, to: root)
@@ -226,60 +248,78 @@ final class PetSettingsViewController: NSViewController {
         groupCode.imageScaling = .scaleProportionallyUpOrDown
         groupCode.setAccessibilityLabel("QQ 群二维码")
         add(groupCode, x: 28, top: 71, width: 224, height: 224, to: groupPage)
+        let support = NSButton(title: "爱发电支持我们", target: self, action: #selector(openSupport))
+        add(support, x: 75, top: 304, width: 130, height: 26, to: groupPage)
 
-        let coatLabel = sectionLabel("毛色")
-        add(coatLabel, x: 18, top: 14, width: 200, height: 18, to: petPage)
+        let coatLabel = sectionLabel("外观")
+        add(coatLabel, x: 18, top: 60, width: 200, height: 18, to: petPage)
+        skinCategory.target = self
+        skinCategory.action = #selector(changeSkinCategory)
+        skinCategory.selectedSegment = 0
+        add(skinCategory, x: 18, top: 82, width: 270, height: 26, to: petPage)
+        let skinScroll = NSScrollView()
+        skinScroll.drawsBackground = false; skinScroll.hasVerticalScroller = true; skinScroll.autohidesScrollers = true
+        skinContainer.frame = NSRect(x: 0, y: 0, width: 270, height: 112)
+        skinScroll.documentView = skinContainer
+        add(skinScroll, x: 18, top: 112, width: 270, height: 94, to: petPage)
+        let install = controlButton("导入外观 (.wheek)…", action: #selector(installSkin))
+        install.font = .systemFont(ofSize: 12)
+        removeSkinButton.font = .systemFont(ofSize: 12)
+        add(install, x: 18, top: 209, width: 137, height: 26, to: petPage)
+        add(removeSkinButton, x: 162, top: 209, width: 117, height: 26, to: petPage)
+        rebuildSkinButtons()
 
-        for (index, skin) in PetSkin.all.enumerated() {
-            let button = skinButtons[skin.id]!
-            button.target = self
-            button.action = #selector(selectSkin(_:))
-            button.identifier = NSUserInterfaceItemIdentifier(skin.id)
-            button.isBordered = false
-            button.wantsLayer = true
-            button.layer?.cornerRadius = 8
-            button.imagePosition = .imageLeading
-            button.imageScaling = .scaleProportionallyUpOrDown
-            button.font = .systemFont(ofSize: 12, weight: .medium)
-            button.alignment = .center
-            button.image = skin.portrait(size: NSSize(width: 16, height: 17))
-            button.setButtonType(.momentaryPushIn)
-            add(button, x: 18 + CGFloat(index % 3) * 95, top: 37 + CGFloat(index / 3) * 34,
-                width: 90, height: 30, to: petPage)
-        }
-
-        let sizeLabel = sectionLabel("大小")
-        add(sizeLabel, x: 18, top: 120 + controlOffset, width: 40, height: 18, to: petPage)
+        add(sectionLabel("大小"), x: 18, top: 248, width: 40, height: 18, to: petPage)
+        sizeSlider.target = self; sizeSlider.action = #selector(changeSize(_:))
+        add(sizeSlider, x: 65, top: 246, width: 165, height: 22, to: petPage)
         scaleValue.font = .systemFont(ofSize: 12, weight: .semibold)
         scaleValue.textColor = mutedBrown
-        scaleValue.alignment = .center
-        add(scaleValue, x: 100, top: 120 + controlOffset, width: 45, height: 18, to: petPage)
-
-        let minus = controlButton("−", action: #selector(decreaseScale))
-        add(minus, x: 68, top: 114 + controlOffset, width: 30, height: 30, to: petPage)
-        let plus = controlButton("+", action: #selector(increaseScale))
-        add(plus, x: 147, top: 114 + controlOffset, width: 30, height: 30, to: petPage)
+        add(scaleValue, x: 235, top: 248, width: 55, height: 18, to: petPage)
+        add(sectionLabel("透明度"), x: 18, top: 280, width: 50, height: 18, to: petPage)
+        opacitySlider.target = self; opacitySlider.action = #selector(changeOpacity(_:))
+        add(opacitySlider, x: 75, top: 278, width: 155, height: 22, to: petPage)
+        fullscreenSwitch.target = self; fullscreenSwitch.action = #selector(toggleFullscreen(_:))
+        add(fullscreenSwitch, x: 18, top: 310, width: 200, height: 22, to: petPage)
+        add(sectionLabel("打瞌睡"), x: 18, top: 342, width: 55, height: 22, to: petPage)
+        sleepChoice.addItems(withTitles: ["15 秒", "30 秒", "60 秒", "关闭"])
+        sleepChoice.target = self; sleepChoice.action = #selector(changeSleep(_:))
+        add(sleepChoice, x: 78, top: 338, width: 110, height: 26, to: petPage)
+        add(sectionLabel("键鼠"), x: 18, top: 374, width: 55, height: 22, to: petPage)
+        deskChoice.addItems(withTitles: ["牧草奶酪", "蜜桃奶盖", "可可黑金"])
+        deskChoice.target = self; deskChoice.action = #selector(changeDesk(_:))
+        add(deskChoice, x: 78, top: 370, width: 115, height: 26, to: petPage)
+        statsLabel.font = .systemFont(ofSize: 11)
+        statsLabel.textColor = mutedBrown
+        statsLabel.maximumNumberOfLines = 2
+        add(statsLabel, x: 18, top: 10, width: 209, height: 38, to: petPage)
+        let feed = NSButton(title: "喂草", target: self, action: #selector(feedGrass))
+        add(feed, x: 230, top: 14, width: 58, height: 26, to: petPage)
 
         labelsSwitch.target = self
         labelsSwitch.action = #selector(toggleLabels(_:))
         labelsSwitch.font = .systemFont(ofSize: 12)
         labelsSwitch.contentTintColor = darkBrown
-        add(labelsSwitch, x: 18, top: 157 + controlOffset, width: 270, height: 22, to: petPage)
+        add(labelsSwitch, x: 18, top: 420, width: 270, height: 22, to: petPage)
         clickThroughSwitch.target = self
         clickThroughSwitch.action = #selector(toggleClickThrough(_:))
         clickThroughSwitch.font = .systemFont(ofSize: 12)
         clickThroughSwitch.contentTintColor = darkBrown
-        add(clickThroughSwitch, x: 18, top: 188 + controlOffset, width: 270, height: 22, to: petPage)
+        add(clickThroughSwitch, x: 18, top: 451, width: 270, height: 22, to: petPage)
 
+        glowSwitch.target = self
+        glowSwitch.action = #selector(toggleGlow(_:))
+        glowSwitch.font = .systemFont(ofSize: 12)
+        glowSwitch.contentTintColor = darkBrown
+        add(glowSwitch, x: 18, top: 482, width: 270, height: 22, to: petPage)
         loginSwitch.allowsMixedState = true
         loginSwitch.target = self
         loginSwitch.action = #selector(toggleLoginAtStartup(_:))
         loginSwitch.font = .systemFont(ofSize: 12)
         loginSwitch.contentTintColor = darkBrown
-        add(loginSwitch, x: 18, top: 219 + controlOffset, width: 270, height: 22, to: petPage)
+        add(loginSwitch, x: 18, top: 513, width: 270, height: 22, to: petPage)
         loginMessage.font = .systemFont(ofSize: 11)
         loginMessage.textColor = mutedBrown
-        add(loginMessage, x: 18, top: 243 + controlOffset, width: 280, height: 18, to: petPage)
+        add(loginMessage, x: 18, top: 537, width: 280, height: 18, to: petPage)
 
         add(lobby, x: 18, top: 6, width: 280, height: 194, to: roomPage)
         let lobbyTitle = sectionLabel("公开房间")
@@ -329,6 +369,10 @@ final class PetSettingsViewController: NSViewController {
         shareSwitch.font = .systemFont(ofSize: 12)
         add(shareSwitch, x: 18, top: 204, width: 280, height: 22, to: roomPage)
         shareTop = roomPage.constraints.first { ($0.firstItem as? NSView) === shareSwitch && $0.firstAttribute == .top }
+        privacyHint.font = .systemFont(ofSize: 9.5)
+        privacyHint.textColor = mutedBrown
+        add(privacyHint, x: 18, top: 226, width: 280, height: 38, to: roomPage)
+        privacyTop = roomPage.constraints.first { ($0.firstItem as? NSView) === privacyHint && $0.firstAttribute == .top }
         networkMessage.font = .systemFont(ofSize: 11)
         networkMessage.textColor = NSColor(calibratedRed: 0.65, green: 0.30, blue: 0.22, alpha: 1)
         networkMessage.lineBreakMode = .byTruncatingTail
@@ -346,7 +390,7 @@ final class PetSettingsViewController: NSViewController {
         peerScroll.drawsBackground = false
         peerScroll.borderType = .noBorder
         peerScroll.documentView = peerDocument
-        add(peerScroll, x: 18, top: 241, width: 280, height: 100, to: roomPage)
+        add(peerScroll, x: 18, top: 241, width: 280, height: 90, to: roomPage)
         emptyMessage.font = .systemFont(ofSize: 12)
         emptyMessage.textColor = mutedBrown
         add(emptyMessage, x: 26, top: 246, width: 260, height: 48, to: roomPage)
@@ -387,6 +431,7 @@ final class PetSettingsViewController: NSViewController {
         peerScroll.isHidden = !inRoom
         networkState.isHidden = !inRoom
         shareTop?.constant = inRoom ? 88 : 204
+        privacyTop?.constant = inRoom ? 110 : 226
         refreshDirectory()
         roomCodeLabel.isHidden = !roomConnected
         copyRoom.isHidden = !roomConnected
@@ -404,7 +449,7 @@ final class PetSettingsViewController: NSViewController {
         networkMessage.toolTip = error
         networkMessage.isHidden = error.isEmpty
         for (constraint, original) in compactConstraints {
-            let top = inRoom ? original - 16 : original + 98
+            let top = inRoom ? original + 18 : original + 134
             if constraint.constant != top { constraint.constant = top }
         }
         if inRoom {
@@ -419,11 +464,23 @@ final class PetSettingsViewController: NSViewController {
         emptyMessage.stringValue = "伙伴加入后会出现在这里。"
         updatePeers(peers)
         scaleValue.stringValue = "\(Int((scale * 100).rounded()))%"
+        sizeSlider.doubleValue = scale
         labelsSwitch.state = showLabels ? .on : .off
         clickThroughSwitch.state = clickThrough ? .on : .off
+        if activeSkinID != skinID {
+            activeSkinID = skinID
+            skinCategory.selectedSegment = PetSkin.named(skinID).settingsGroup
+            rebuildSkinButtons()
+        }
+        refreshSkinSelection()
+    }
+
+    private func refreshSkinSelection() {
+        removeSkinButton.isHidden = skinCategory.selectedSegment != 3
+        removeSkinButton.isEnabled = activeSkinID.flatMap(PetSkin.find)?.isCustom == true
         for skin in PetSkin.all {
             guard let button = skinButtons[skin.id] else { continue }
-            let selected = skin.id == skinID
+            let selected = skin.id == activeSkinID
             button.title = skin.name
             button.toolTip = selected ? skin.name + "（当前）" : skin.name
             button.layer?.borderWidth = selected ? 1.5 : 0.5
@@ -432,6 +489,50 @@ final class PetSettingsViewController: NSViewController {
             button.contentTintColor = darkBrown
         }
     }
+
+    func refreshOptions(opacity: Double, fullscreen: Bool, sleep: Int, desk: String, todayKeys: UInt64, todayClicks: UInt64, totalKeys: UInt64, totalClicks: UInt64, keyboardGlow: Bool = false) {
+        glowSwitch.state = keyboardGlow ? .on : .off
+        opacitySlider.doubleValue = opacity
+        fullscreenSwitch.state = fullscreen ? .on : .off
+        sleepChoice.selectItem(at: [15, 30, 60, 0].firstIndex(of: sleep) ?? 1)
+        deskChoice.selectItem(at: ["meadow", "peach", "mocha"].firstIndex(of: desk) ?? 0)
+        statsLabel.stringValue = "今日按键：\(todayKeys)  点击：\(todayClicks)\n累计按键：\(totalKeys)  点击：\(totalClicks)"
+    }
+
+    private func rebuildSkinButtons() {
+        skinContainer.subviews.forEach { $0.removeFromSuperview() }
+        skinButtons.removeAll()
+        let category = skinCategory.selectedSegment
+        let skins = PetSkin.all.filter { $0.settingsGroup == category }
+        skinContainer.frame.size.height = max(94, CGFloat((skins.count + 2) / 3) * 30)
+        if skins.isEmpty {
+            add(NSTextField(labelWithString: "还没有自定义外观"), x: 4, top: 8, width: 200, height: 18, to: skinContainer)
+        }
+        for (index, skin) in skins.enumerated() {
+            let button = NSButton(title: skin.name, target: self, action: #selector(selectSkin(_:)))
+            button.identifier = NSUserInterfaceItemIdentifier(skin.id)
+            button.font = .systemFont(ofSize: 11)
+            button.isBordered = false
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 7
+            button.image = skin.portrait(size: NSSize(width: 16, height: 17))
+            button.imagePosition = .imageLeading
+            add(button, x: CGFloat(index % 3) * 90, top: CGFloat(index / 3) * 30, width: 88, height: 28, to: skinContainer)
+            skinButtons[skin.id] = button
+        }
+        refreshSkinSelection()
+    }
+    func reloadSkins() { portraitCache.removeAll(); rebuildSkinButtons() }
+    @objc private func changeSkinCategory() { rebuildSkinButtons() }
+    @objc private func feedGrass() { onFeedGrass?() }
+    @objc private func installSkin() { onInstallSkin?() }
+    @objc private func deleteSkin() { onDeleteSkin?() }
+    @objc private func changeSize(_ sender: NSSlider) { onScaleChange?(sender.doubleValue) }
+    @objc private func changeOpacity(_ sender: NSSlider) { onOpacityChange?(sender.doubleValue) }
+    @objc private func toggleFullscreen(_ sender: NSButton) { onFullscreenChange?(sender.state == .on) }
+    @objc private func changeSleep(_ sender: NSPopUpButton) { onSleepChange?([15, 30, 60, 0][sender.indexOfSelectedItem]) }
+    @objc private func changeDesk(_ sender: NSPopUpButton) { onDeskSkinChange?(["meadow", "peach", "mocha"][sender.indexOfSelectedItem]) }
+    @objc private func openSupport() { NSWorkspace.shared.open(URL(string: "https://afdian.com/a/guinea_pig_garden")!) }
 
     private func updatePeers(_ peers: [(String, LocalPeers.Peer)]) {
         let ids = Set(peers.map { $0.0 })
@@ -550,8 +651,7 @@ final class PetSettingsViewController: NSViewController {
         guard let id = sender.identifier?.rawValue else { return }
         onSelectSkin?(id)
     }
-    @objc private func decreaseScale() { onScaleChange?(-0.1) }
-    @objc private func increaseScale() { onScaleChange?(0.1) }
+    @objc private func toggleGlow(_ sender: NSButton) { onKeyboardGlowChange?(sender.state == .on) }
     @objc private func toggleLabels(_ sender: NSButton) { onShowLabelsChange?(sender.state == .on) }
     func setLoginAtStartup(enabled: Bool, pending: Bool, message: String) {
         loginRegistered = enabled || pending
@@ -627,8 +727,29 @@ final class PetSettingsViewController: NSViewController {
     }
 }
 
+extension PetSkin {
+    var settingsGroup: Int {
+        if isCustom { return 3 }
+        if isProne { return 2 }
+        return id.hasPrefix("pixel-longhair-") ? 1 : 0
+    }
+}
+
 private final class SettingsCardView: NSView {
     var closeAction: (() -> Void)?
+    var dropAction: ((URL) -> Void)?
+    override init(frame frameRect: NSRect) { super.init(frame: frameRect); registerForDraggedTypes([.fileURL]) }
+    required init?(coder: NSCoder) { super.init(coder: coder); registerForDraggedTypes([.fileURL]) }
+    private func packURL(_ sender: NSDraggingInfo) -> URL? {
+        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+              urls.count == 1, urls[0].pathExtension.lowercased() == "wheek" else { return nil }
+        return urls[0]
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { packURL(sender) == nil ? [] : .copy }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let url = packURL(sender), let dropAction = dropAction else { return false }
+        dropAction(url); return true
+    }
     override var acceptsFirstResponder: Bool { true }
     override func cancelOperation(_ sender: Any?) { closeAction?() }
 }

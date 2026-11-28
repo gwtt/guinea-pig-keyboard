@@ -116,6 +116,7 @@ namespace WheekKeys
                 window = new Window { Owner = owner, Width = Math.Max(180, owner.Width), Height = Math.Max(150, owner.Width * 308.0 / 400.0 + LabelHeadroom),
                     WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent, Topmost = true,
                     ShowInTaskbar = false, ShowActivated = false, ResizeMode = ResizeMode.NoResize, Content = panel };
+                window.SetBinding(Window.OpacityProperty, new System.Windows.Data.Binding("Opacity") { Source = owner });
                 placement = new WindowPlacement(window, null, Interact);
                 scene.HeadPositionChanged += PositionLabel;
                 label.SizeChanged += delegate { PositionLabel(); };
@@ -197,6 +198,8 @@ namespace WheekKeys
             {
                 this.now = now;
                 scene.Skin = peer.Skin;
+                PetWindow pet = window.Owner as PetWindow;
+                if (pet != null && scene.SleepSeconds != pet.SleepSeconds) scene.SleepSeconds = pet.SleepSeconds;
                 if (scene.ShowKeyLabels != showLabels) scene.ShowKeyLabels = showLabels;
                 MatchSize();
                 LocalPeers.PeerAction action;

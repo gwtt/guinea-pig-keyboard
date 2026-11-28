@@ -2,6 +2,30 @@ import AppKit
 
 // Runs against the packaged application on both Mac architectures in CI.
 @MainActor func runSmokeTest() {
+    try! runWheekPackSmokeTest()
+    precondition(!AnonymousKeyboardInput.canRun(authorized: false, secureInput: false))
+    precondition(!AnonymousKeyboardInput.canRun(authorized: true, secureInput: true))
+    precondition(AnonymousKeyboardInput.canRun(authorized: true, secureInput: false))
+    var gate = InputPulseGate()
+    gate.noteHID(at: 1); gate.notePrecise(at: 1.02)
+    precondition(gate.takeReady(at: 2) == 0, "HID 优先时不得重复")
+    gate.notePrecise(at: 3); gate.noteHID(at: 3.02)
+    precondition(gate.takeReady(at: 4) == 0, "精确事件优先时不得重复")
+    gate.noteHID(at: 5)
+    precondition(gate.takeReady(at: 5.05) == 0 && gate.takeReady(at: 5.2) == 1, "缺失精确事件时仅补一次")
+    gate.noteHID(at: 6); gate.reset()
+    precondition(gate.takeReady(at: 7) == 0, "撤权或安全输入时必须丢弃待处理脉冲")
+    var daily = DailyActivity(day: "2026-11-27", keys: 999, clicks: 4)
+    precondition(!daily.rollover(to: "2026-11-27") && daily.keys == 999 && daily.clicks == 4)
+    precondition(daily.recordKey(at: 10) && daily.keys == 1000)
+    daily.recordClick(); precondition(daily.clicks == 5)
+    precondition(daily.rollover(to: "2026-11-28") && daily.keys == 0 && daily.clicks == 0)
+    for index in 0..<9 { precondition(!daily.recordKey(at: 40 + Double(index) / 100)) }
+    precondition(daily.recordKey(at: 40.09), "十次快速按键应触发反馈")
+    precondition(!daily.recordKey(at: 40.1), "快速按键反馈应冷却")
+    precondition(shouldShowPet(manuallyHidden: false, hideFullscreen: true, fullscreen: false))
+    precondition(!shouldShowPet(manuallyHidden: false, hideFullscreen: true, fullscreen: true))
+    precondition(!shouldShowPet(manuallyHidden: true, hideFullscreen: true, fullscreen: false))
     func releaseData(_ tag: String, asset: String = "WheekKeys-macOS.zip", host: String = "github.com", prerelease: Bool = false) -> Data {
         let json: [String: Any] = ["tag_name": tag, "draft": false, "prerelease": prerelease,
             "assets": [["name": asset, "browser_download_url": "https://\(host)/gwtt/guinea-pig-keyboard/releases/download/\(tag)/\(asset)"]]]
@@ -32,7 +56,12 @@ import AppKit
     precondition(parsed.1.skin == "pixel-longhair-gold-white", "Old peer coat was not mapped")
     precondition(PetSkin.named("gold-white").id == "pixel-golden-white", "Old profile coat was not mapped")
     precondition(PetSkin.all.first?.id == "pixel-tricolor", "Pixel appearance must remain the default")
-    precondition(PetSkin.all.count == 18 && PetSkin.all.filter { $0.isProne }.count == 4)
+    let localCustom = PetSkin.registerCustom(id: "wheek-network-test", name: "测试", baseCoat: "pixel-longhair-cream", author: nil,
+                                             furColor: nil, inkColor: nil, eyeColor: nil, body: nil, paw: nil, mouth: nil)
+    precondition(localCustom.appearanceNetworkID == "pixel-longhair-cream")
+    precondition(parse("WK1|\(remoteID)|wheek-network-test|1|2") == nil)
+    PetSkin.unregisterCustom(id: localCustom.id)
+    precondition(PetSkin.all.count == 22 && PetSkin.all.filter { $0.isProne }.count == 8)
     precondition(PetSkin.all.allSatisfy { !$0.name.isEmpty && !$0.name.hasPrefix("像素") })
     for (legacy, pixel) in [("tricolor", "tricolor"), ("californian", "californian"),
                             ("gold-white", "golden-white"), ("teddy", "chocolate"),
@@ -139,6 +168,8 @@ import AppKit
     precondition(namedPeers[remoteID]?.takeAction(now: 18.2) == nil)
     precondition(namedPeers[remoteID]?.takeAction(now: 18.3) == .key(110))
     precondition(!apply("WS1|\(ownID)|drawn-tricolor|1", now: 18) && namedPeers.count == 1)
+    precondition(apply("WA1|\(remoteID)|6|k511", now: 19))
+    precondition(namedPeers[remoteID]?.takeAction(now: 19) == .key(UInt16.max))
     precondition(NetworkKeyCodes.scan(for: 0) == 30 && NetworkKeyCodes.scan(for: 49) == 57 &&
                  NetworkKeyCodes.scan(for: 62) == 285 && NetworkKeyCodes.scan(for: 76) == 284 &&
                  NetworkKeyCodes.scan(for: 110) == 349)
@@ -149,7 +180,7 @@ import AppKit
     func descendants(_ view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap { descendants($0) }
     }
-    guard let tabs = descendants(settingsView).compactMap({ $0 as? NSSegmentedControl }).first else {
+    guard let tabs = descendants(settingsView).compactMap({ $0 as? NSSegmentedControl }).first(where: { $0.segmentCount == 3 }) else {
         fatalError("Settings tabs missing")
     }
     precondition(tabs.selectedSegment == 0, "Settings must start on pet tab")
@@ -188,14 +219,40 @@ import AppKit
     precondition(login.state == .mixed)
     login.performClick(nil)
     precondition(!loginRequested, "Pending login registration should be cancellable")
-    guard let minus = controls.first(where: { $0.title == "−" }), let plus = controls.first(where: { $0.title == "+" }),
-          let scale = descendants(settingsView).compactMap({ $0 as? NSTextField }).first(where: { $0.stringValue == "58%" }) else {
-        fatalError("Scale controls missing")
+    guard let scale = descendants(settingsView).compactMap({ $0 as? NSTextField }).first(where: { $0.stringValue == "58%" }) else {
+        fatalError("Scale display missing")
     }
-    let minusFrame = settingsView.convert(minus.bounds, from: minus)
-    let scaleFrame = settingsView.convert(scale.bounds, from: scale)
-    let plusFrame = settingsView.convert(plus.bounds, from: plus)
-    precondition(minusFrame.minX < scaleFrame.minX && scaleFrame.minX < plusFrame.minX && plusFrame.maxX < settingsView.bounds.midX + 50)
+    settings.refreshOptions(opacity: 0.6, fullscreen: true, sleep: 60, desk: "mocha", todayKeys: 12, todayClicks: 3, totalKeys: 1002, totalClicks: 20)
+    let labels = descendants(settingsView).compactMap { $0 as? NSTextField }
+    precondition(labels.contains { $0.stringValue.contains("今日按键：12") && $0.stringValue.contains("累计按键：1002") })
+    let sliders = descendants(settingsView).compactMap { $0 as? NSSlider }
+    precondition(sliders.contains { $0.minValue == 0.5 && $0.maxValue == 2 })
+    precondition(sliders.contains { $0.minValue == 0.2 && $0.maxValue == 1 })
+    precondition(controls.contains { $0.title == "全屏时自动隐藏" })
+    precondition(controls.contains { $0.title == "喂草" })
+    var opacityChanged = 0.0, fullscreenChanged = false, slept = -1, desk = "", fed = false, glowChanged = false
+    settings.onOpacityChange = { opacityChanged = $0 }
+    settings.onFullscreenChange = { fullscreenChanged = $0 }
+    settings.onSleepChange = { slept = $0 }
+    settings.onDeskSkinChange = { desk = $0 }
+    settings.onFeedGrass = { fed = true }
+    settings.onKeyboardGlowChange = { glowChanged = $0 }
+    let glowControl = controls.first { $0.title == "键帽流光" }!
+    precondition(glowControl.state == .off)
+    glowControl.state = .on; glowControl.sendAction(glowControl.action, to: glowControl.target)
+    precondition(glowChanged)
+    let opacityControl = sliders.first { $0.minValue == 0.2 }!
+    opacityControl.doubleValue = 0.7; opacityControl.sendAction(opacityControl.action, to: opacityControl.target)
+    let fullscreenControl = controls.first { $0.title == "全屏时自动隐藏" }!
+    fullscreenControl.state = .on; fullscreenControl.sendAction(fullscreenControl.action, to: fullscreenControl.target)
+    let popups = descendants(settingsView).compactMap { $0 as? NSPopUpButton }
+    let sleepControl = popups.first { $0.itemTitles.contains("15 秒") }!
+    sleepControl.selectItem(at: 3); sleepControl.sendAction(sleepControl.action, to: sleepControl.target)
+    let deskControl = popups.first { $0.itemTitles.contains("牧草奶酪") }!
+    deskControl.selectItem(at: 1); deskControl.sendAction(deskControl.action, to: deskControl.target)
+    let feedControl = controls.first { $0.title == "喂草" }!
+    feedControl.sendAction(feedControl.action, to: feedControl.target)
+    precondition(abs(opacityChanged - 0.7) < 0.001 && fullscreenChanged && slept == 0 && desk == "peach" && fed)
     settings.refresh(skinID: "pixel-tricolor", scale: initialPetScale(0), showLabels: true, clickThrough: false,
                      keys: 0, clicks: 0, peers: [], networkStatus: "", roomCode: nil, roomConnected: false, nickname: "")
     precondition(scale.stringValue == "58%")
@@ -206,9 +263,14 @@ import AppKit
         let id = $0.identifier?.rawValue ?? ""
         return PetSkin.all.contains { $0.id == id }
     }
-    precondition(skinButtons.count == 18 && skinButtons.allSatisfy {
+    precondition(skinButtons.count == 7 && skinButtons.allSatisfy {
         $0.title == PetSkin.named($0.identifier?.rawValue).name && settingsView.bounds.contains(settingsView.convert($0.bounds, from: $0))
     })
+    guard let category = descendants(settingsView).compactMap({ $0 as? NSSegmentedControl }).first(where: { $0.segmentCount == 4 }) else { fatalError("Skin categories missing") }
+    category.selectedSegment = 1; category.sendAction(category.action, to: category.target)
+    precondition(descendants(settingsView).compactMap { $0 as? NSButton }.filter { ($0.identifier?.rawValue ?? "").hasPrefix("pixel-longhair-") }.count == 7)
+    category.selectedSegment = 2; category.sendAction(category.action, to: category.target)
+    precondition(descendants(settingsView).compactMap { $0 as? NSButton }.filter { ($0.identifier?.rawValue ?? "").hasPrefix("prone-") }.count == 8)
     precondition(tabs.segmentCount == 3 && tabs.label(forSegment: 2) == "QQ 群")
     tabs.selectedSegment = 2
     tabs.sendAction(tabs.action, to: tabs.target)
@@ -264,7 +326,7 @@ import AppKit
     let nextTexts = visibleText()
     precondition(nextTexts.contains { $0.stringValue == "私密房间 · 1/16" })
     precondition(!nextTexts.contains { $0.stringValue == "长毛黄白 · bbbb" })
-    guard let share = descendants(settingsView).compactMap({ $0 as? NSButton }).first(where: { $0.title == "同步按键和鼠标动作" }) else {
+    guard let share = descendants(settingsView).compactMap({ $0 as? NSButton }).first(where: { $0.title == "同步敲击和点击动画" }) else {
         fatalError("Activity sharing switch missing")
     }
     var shared = true
@@ -337,7 +399,9 @@ import AppKit
     var idleFrames = Set<Data>()
     let root = Bundle.main.resourceURL!
     for skin in PetSkin.all {
-        let files = [skin.body, skin.paw, "keyboard.png", "mouse.png", "mouth-peep.png", "mouth-yawn.png"]
+        let files = skin.isProne
+            ? ["drawn-\(String(skin.id.dropFirst(6)))-body.png", "drawn-tricolor-feet.png", "drawn-tricolor-eyes.png", "drawn-paw.png"]
+            : [skin.body, skin.paw, "keyboard.png", "mouse.png", "mouth-peep.png", "mouth-yawn.png"]
         for file in files {
             precondition(NSImage(contentsOf: root.appendingPathComponent(file)) != nil, "Missing sprite: \(file)")
         }
@@ -348,6 +412,12 @@ import AppKit
         print("Rendered \(skin.id)")
     }
     view.selectSkin("pixel-californian")
+    var deskFrames = Set<Data>()
+    for desk in ["peach", "mocha", "meadow"] {
+        view.deskSkinID = desk
+        let frame = snapshot()
+        precondition(deskFrames.insert(frame).inserted, "键鼠主题没有改变画面：" + desk)
+    }
     let idle = snapshot()
     view.pressKey(0) // ANSI A
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.075))
@@ -380,6 +450,8 @@ import AppKit
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.09))
     precondition(snapshot() != beforeScroll, "Mouse wheel did not animate")
     precondition(PetView.dozePose(idle: 29.99) == nil)
+    precondition(PetView.dozePose(idle: 16, delay: 15) != nil)
+    precondition(PetView.dozePose(idle: 55, delay: 60) == nil)
     precondition(PetView.dozePose(idle: 30)?.frame.eyes == 1)
     precondition(PetView.dozePose(idle: 31.5)?.frame.mouth == 2)
     let restingTime = Date()
@@ -391,5 +463,18 @@ import AppKit
     view.pressKey(0)
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.65))
     precondition(snapshot() == resting, "Key input did not restore the awake face")
+    let awake = snapshot()
+    for _ in 0..<4 { view.localKeyDown(51) }
+    precondition(snapshot() != awake, "连续退格应显示慌张表情")
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.35))
+    let beforeGlow = snapshot()
+    for _ in 0..<4 { view.localKeyDown(0) }
+    precondition(snapshot() == beforeGlow, "默认关闭连击流光")
+    view.keyboardGlowEnabled = true
+    precondition(snapshot() != beforeGlow, "快速输入应点亮键帽")
+    view.keyboardGlowEnabled = false
+    for dx in [32.0, -32.0, 32.0, -32.0] { view.localMouseMove(dx: dx, dy: 0) }
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.24))
+    precondition(snapshot() != awake, "快速摇动鼠标应触发桌宠动作")
     print("Verified all skins, keyboard/mouse animation, blinking, idle yawn and wake-up")
 }

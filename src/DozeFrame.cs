@@ -7,7 +7,6 @@ namespace WheekKeys
 {
     internal sealed class DozeFrame
     {
-        internal const int IdleDelay = 30000;
         private static readonly List<DozeFrame> Frames = new List<DozeFrame>();
         private static readonly int Cycle;
         internal readonly int Eyes, Mouth, Nod;
@@ -36,10 +35,9 @@ namespace WheekKeys
             Nod = nod;
         }
 
-        internal static DozeFrame At(double idle)
+        internal static DozeFrame At(double elapsed)
         {
-            if (idle < IdleDelay) return null;
-            double phase = (idle - IdleDelay) % Cycle;
+            double phase = elapsed % Cycle;
             foreach (DozeFrame frame in Frames)
                 if (phase < frame.end) return frame;
             return Frames[0];

@@ -16,8 +16,13 @@ cp macos/Info.plist "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$app/Contents/Info.plist"
 cp assets/avatar.png assets/pixel/{guinea-pig-*,mouth-*}.png assets/pixel/coats/*.png assets/pixel/doze.txt "$app/Contents/Resources/"
 cp assets/qq-group.png "$app/Contents/Resources/"
+cp assets/pixel/paw.png "$app/Contents/Resources/"
 cp assets/pixel/mac-keyboard.png "$app/Contents/Resources/keyboard.png"
 cp assets/pixel/mac-mouse.png "$app/Contents/Resources/mouse.png"
+cp assets/pixel/keyboard.png "$app/Contents/Resources/reference-keyboard.png"
+cp assets/pixel/mouse.png "$app/Contents/Resources/reference-mouse.png"
+cp assets/pixel/{keyboard,mouse}-{peach,mocha}.png "$app/Contents/Resources/"
+for file in assets/drawn/*.png; do cp "$file" "$app/Contents/Resources/drawn-$(basename "$file")"; done
 cp assets/keyboard-layout.txt "$app/Contents/Resources/keyboard-layout.txt"
 mkdir "$work/WheekKeys.iconset"
 for size in 16 32 128 256 512; do
@@ -27,10 +32,10 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$work/WheekKeys.iconset" -o "$app/Contents/Resources/WheekKeys.icns"
 for arch in arm64 x86_64; do
-  xcrun swiftc -swift-version 5 -parse-as-library -O -target "$arch-apple-macos11.0" \
-    macos/main.swift macos/PetSkin.swift macos/PetView.swift macos/PetSettings.swift macos/FriendDesktop.swift \
+  xcrun swiftc -import-objc-header macos/WheekArchive.h -swift-version 5 -parse-as-library -O -target "$arch-apple-macos11.0" \
+    macos/main.swift macos/AnonymousKeyboardInput.swift macos/PetSkin.swift macos/WheekPackLoader.swift macos/PetView.swift macos/PetSettings.swift macos/FriendDesktop.swift \
     macos/LocalPeers.swift macos/RoomTransport.swift macos/RoomMembership.swift macos/RoomDirectory.swift \
-    macos/NetworkKeyCodes.swift macos/SmokeTest.swift -o "$work/WheekKeys-$arch"
+    macos/NetworkKeyCodes.swift macos/SmokeTest.swift macos/WheekPackSmokeTest.swift -larchive -framework IOKit -framework Carbon -o "$work/WheekKeys-$arch"
 done
 lipo -create "$work/WheekKeys-arm64" "$work/WheekKeys-x86_64" -output "$app/Contents/MacOS/WheekKeys"
 chmod 755 "$app/Contents/MacOS/WheekKeys"

@@ -11,6 +11,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $frameworkDir 'csc.exe'))) {
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('wheek-pixel-smoke-' + [Guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $scratch
 $testExe = Join-Path $scratch 'PixelSkinSmokeTest.exe'
+$penTestExe = Join-Path $scratch 'PenInputSmokeTest.exe'
 try {
     $arguments = @('/nologo', '/codepage:65001', "/out:$testExe", '/reference:System.Core.dll',
         '/reference:System.IO.Compression.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', '/reference:System.Xaml.dll')
@@ -21,8 +22,17 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Pixel skin test compilation failed.' }
     & $testExe $Executable
     if ($LASTEXITCODE -ne 0) { throw 'Pixel skin smoke test failed.' }
+    $penArguments = @('/nologo', '/codepage:65001', "/out:$penTestExe")
+    foreach ($assembly in 'WindowsBase', 'PresentationCore', 'PresentationFramework') {
+        $penArguments += '/reference:' + (Join-Path $frameworkDir "WPF/$assembly.dll")
+    }
+    & (Join-Path $frameworkDir 'csc.exe') @penArguments (Join-Path $PSScriptRoot '../src/PenInput.cs') (Join-Path $PSScriptRoot '../src/PetReactions.cs') (Join-Path $PSScriptRoot 'PenInputSmokeTest.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Pen and reaction test compilation failed.' }
+    & $penTestExe
+    if ($LASTEXITCODE -ne 0) { throw 'Pen and reaction smoke test failed.' }
 }
 finally {
+    if (Test-Path -LiteralPath $penTestExe) { Remove-Item -LiteralPath $penTestExe }
     if (Test-Path -LiteralPath $testExe) { Remove-Item -LiteralPath $testExe }
     if (@(Get-ChildItem -LiteralPath $scratch -Force).Count -eq 0) { Remove-Item -LiteralPath $scratch }
 }

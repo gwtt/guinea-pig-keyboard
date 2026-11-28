@@ -43,6 +43,7 @@ namespace WheekKeys
         public readonly string DrawnArtId;
         public readonly bool IsProne;
         public bool IsCustom { get { return BaseSkin != null; } }
+        public string Group { get { return IsCustom ? "自定义" : IsProne ? "趴趴猪" : Id.StartsWith("pixel-longhair-", StringComparison.Ordinal) ? "长毛" : "短毛"; } }
         public PetSkin BaseSkin { get; private set; }
         public BitmapImage CustomBody { get; internal set; }
         public BitmapImage CustomPaw { get; internal set; }
@@ -77,10 +78,25 @@ namespace WheekKeys
             lock (custom)
             {
                 custom[skin.Id] = skin;
-                List<PetSkin> skins = new List<PetSkin>(All);
-                skins.AddRange(custom.Values);
-                available = skins.AsReadOnly();
+                RefreshAvailable();
             }
+        }
+
+        internal static bool Unregister(string id)
+        {
+            lock (custom)
+            {
+                if (!custom.Remove(id)) return false;
+                RefreshAvailable();
+                return true;
+            }
+        }
+
+        private static void RefreshAvailable()
+        {
+            List<PetSkin> skins = new List<PetSkin>(All);
+            skins.AddRange(custom.Values);
+            available = skins.AsReadOnly();
         }
 
         public static PetSkin FromId(string id) { return Find(id) ?? All[0]; }

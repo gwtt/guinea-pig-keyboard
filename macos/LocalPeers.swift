@@ -76,10 +76,8 @@ final class LocalPeers {
     private var actionSequence: UInt64 = 0
     private var pendingActions: [(token: String, time: TimeInterval)] = []
 
-    func recordKey(_ code: UInt16) {
-        guard let scan = NetworkKeyCodes.scan(for: code) else { return }
-        recordAction("k\(scan)")
-    }
+    // The reserved WA1 token replays an unlabeled tap even on older peers.
+    func recordTyping() { recordAction("k511") }
 
     func recordClick(right: Bool) { recordAction(right ? "r" : "l") }
 
@@ -233,7 +231,7 @@ final class LocalPeers {
             peer.nickname = value
         case "WS1":
             guard fields.count == 4, fields[3] == "0" || fields[3] == "1" else { return false }
-            if let skin = PetSkin.find(String(fields[2])) {
+            if let skin = PetSkin.find(String(fields[2])), !skin.isCustom {
                 peer.skin = skin.id
                 peer.hasAppearance = true
             }
@@ -266,7 +264,7 @@ final class LocalPeers {
         guard let (skinID, keys, clicks) = payload?() else { return [] }
         let skin = PetSkin.named(skinID)
         return ["WK1|\(session)|\(skin.networkID)|\(keys)|\(clicks)",
-                "WS1|\(session)|\(skin.id)|\(shareActivity ? "1" : "0")", nicknamePacket()]
+                "WS1|\(session)|\(skin.appearanceNetworkID)|\(shareActivity ? "1" : "0")", nicknamePacket()]
     }
 
     private func actionPacket(now: TimeInterval) -> String? {
@@ -289,7 +287,7 @@ final class LocalPeers {
     }
 
     private static func parseState(_ fields: [Substring], now: TimeInterval) -> Peer? {
-        guard fields.count == 5, fields[0] == "WK1", let skin = PetSkin.find(String(fields[2])),
+        guard fields.count == 5, fields[0] == "WK1", let skin = PetSkin.find(String(fields[2])), !skin.isCustom,
               let keys = count(fields[3]), let clicks = count(fields[4]) else { return nil }
         return Peer(skin: skin.id, keys: keys, clicks: clicks, seen: now)
     }

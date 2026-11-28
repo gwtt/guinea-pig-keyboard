@@ -103,12 +103,9 @@ namespace WheekKeys
 
         public void RefreshState() { nextSend = 0; }
 
-        public void RecordKey(int scan, double now)
-        {
-            if (scan > 0 && scan <= 511) RecordAction('k', scan, now);
-        }
+        public void RecordTyping(double now) { RecordAction('k', now); }
 
-        public void RecordClick(bool right, double now) { RecordAction(right ? 'r' : 'l', 0, now); }
+        public void RecordClick(bool right, double now) { RecordAction(right ? 'r' : 'l', now); }
 
         public bool TrySendInteraction(string target, string kind, double now)
         {
@@ -136,11 +133,11 @@ namespace WheekKeys
             return false;
         }
 
-        private void RecordAction(char kind, int scan, double now)
+        private void RecordAction(char kind, double now)
         {
             if (!ShareActivity || !RoomConnected) return;
             if (pendingActions.Count >= 64) pendingActions.Dequeue();
-            pendingActions.Enqueue(new PeerAction { Kind = kind, Scan = scan, Received = now });
+            pendingActions.Enqueue(new PeerAction { Kind = kind, Received = now });
         }
 
         public void EnterRoom(string code, bool hosting, bool isPublic, string expectedHost)
@@ -233,7 +230,8 @@ namespace WheekKeys
             {
                 PeerAction action = pendingActions.Dequeue();
                 if (now - action.Received > 0.8) continue;
-                actions.Add(action.Kind == 'k' ? "k" + action.Scan.ToString(CultureInfo.InvariantCulture) : action.Kind.ToString());
+                // Reserved, unlabeled animation key understood by older WA1 clients.
+                actions.Add(action.Kind == 'k' ? "k511" : action.Kind.ToString());
             }
             if (actions.Count == 0) return;
             actionSequence++;

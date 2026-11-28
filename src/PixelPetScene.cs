@@ -63,6 +63,20 @@ namespace WheekKeys
         private double blinkStarted = double.NegativeInfinity;
         private int blinkFrame;
         private readonly IdleSleepAnimation sleep = new IdleSleepAnimation();
+        private readonly PetReactions reactions = new PetReactions();
+        internal bool KeyboardGlowEnabled
+        {
+            get { return reactions.GlowEnabled; }
+            set { reactions.GlowEnabled = value; InvalidateVisual(); }
+        }
+        internal void LocalKeyDown(int scan) { reactions.Press(scan == 0x0e, clock.Elapsed.TotalMilliseconds); }
+        internal void LocalMouseMove(double dx, double dy)
+        {
+            double now = clock.Elapsed.TotalMilliseconds;
+            if (PenActive(now)) return;
+            reactions.Move(dx, dy, now);
+            MoveMouse(dx, dy);
+        }
         private readonly MouthAnimation mouth = new MouthAnimation();
         private bool sleepVisualActive;
 
@@ -94,7 +108,8 @@ namespace WheekKeys
                 AdvanceMouse(now);
                 bool hopping = now - hopStarted < HopDuration;
                 if (!left.Active && !right.Active && !RearPawsActive && mouseGrip == 0 && mousePosition == mouseDestination
-                    && now - lastMouseUse > 250 && !settlingMouse && !pendingMouseClick && !hopping) animation.Stop();
+                    && now - lastMouseUse > 250 && !settlingMouse && !pendingMouseClick && !hopping
+                    && !reactions.Animating(now) && !PenActive(now)) animation.Stop();
                 InvalidateVisual();
             };
             gaze = new DispatcherTimer(DispatcherPriority.Background);
@@ -185,6 +200,12 @@ namespace WheekKeys
             hopStarted = now;
             mouth.Trigger(now);
             Wake();
+        }
+
+        internal int SleepSeconds
+        {
+            get { return sleep.DelaySeconds; }
+            set { sleep.SetDelay(value, clock.Elapsed.TotalMilliseconds); InvalidateVisual(); }
         }
 
         private Vector HopOffset(double now)
@@ -596,19 +617,17 @@ namespace WheekKeys
             double dozeNod = 0;
             if (sleep.Progress(now) >= 1 && !sleep.IsWaking(now))
             {
-                DozeFrame doze = DozeFrame.At(sleep.IdleMilliseconds(now));
-                if (doze != null)
-                {
-                    dozeNod = Math.Round(doze.Nod * 0.6);
-                    dozeMouth = doze.Mouth;
-                    drowsiness = doze.Eyes == 1 ? 0.56 : 1.0;
-                }
+                DozeFrame doze = DozeFrame.At(sleep.TimeSinceDozeStarted(now));
+                dozeNod = Math.Round(doze.Nod * 0.6);
+                dozeMouth = doze.Mouth;
+                drowsiness = doze.Eyes == 1 ? 0.56 : 1.0;
             }
 
             lp = FollowBody(lp, lean, dip, left.BodyAttachment(now) * (1 - mouseReach));
             rp = FollowBody(rp, lean, dip, right.BodyAttachment(now));
 
-            Vector startle = sleep.StartleOffset(now) + HopOffset(now);
+            double tilt;
+            Vector startle = sleep.StartleOffset(now) + HopOffset(now) + reactions.Popcorn(now, out tilt);
             startle = new Vector(Math.Round(startle.X), Math.Round(startle.Y + dozeNod));
             lp = new Point(Math.Round(lp.X + startle.X * 0.55), Math.Round(lp.Y + startle.Y * 0.55));
             rp = new Point(Math.Round(rp.X + startle.X * 0.55), Math.Round(rp.Y + startle.Y * 0.55));
@@ -628,30 +647,47 @@ namespace WheekKeys
             SetBodyBounds(nextBody);
             dc.PushTransform(new TranslateTransform(SceneOffsetX, 0));
             int blink = sleep.IsWaking(now) ? 0 : blinkFrame;
+            var twist = tilt == 0 ? null : new RotateTransform(tilt, bodyBounds.X + bodyBounds.Width / 2, bodyBounds.Y + bodyBounds.Height * 0.6);
+            bool panic = reactions.Panicked(now);
+            double eyeScale = panic ? 1.32 : sleep.EyeScale(now);
             if (drawnProne != null)
             {
-                DrawMouse(dc, click);
+                if (PenActive(now)) DrawPen(dc); else DrawMouse(dc, click);
                 PixelKeyboardArt.Draw(dc, desk, right.Scan, r, left.Scan, l);
                 if (drawnProne.Compact)
                 {
                     PixelKeyboardArt.DrawPressed(dc, desk, rearLeft.Scan, rearLeft.Contact(now), PixelKeyboardArt.IsRight(rearLeft.Scan));
                     PixelKeyboardArt.DrawPressed(dc, desk, rearRight.Scan, rearRight.Contact(now), PixelKeyboardArt.IsRight(rearRight.Scan));
                 }
+                PixelKeyboardArt.DrawGlow(dc, desk, reactions.GlowPhase(now), reactions.GlowStrength(now));
+                if (twist != null) dc.PushTransform(twist);
                 if (drawnProne.Compact) DrawCompactFeet(dc, drawnPose, startle, now, true);
-                Eyes.Draw(dc, bodyBounds, headOffset, blink, drowsiness, sleep.EyeScale(now), mouth.Frame, dozeMouth);
+                Eyes.Draw(dc, bodyBounds, headOffset, blink, drowsiness, eyeScale, mouth.Frame, dozeMouth);
                 if (drawnProne.Compact) DrawCompactFeet(dc, drawnPose, startle, now, false);
                 else { DrawDrawnArm(dc, rp, true); DrawDrawnArm(dc, lp, false); }
+                if (twist != null) dc.Pop();
             }
             else
             {
-                Eyes.Draw(dc, bodyBounds, headOffset, blink, drowsiness, sleep.EyeScale(now), mouth.Frame, dozeMouth);
-                DrawMouse(dc, click);
+                if (twist != null) dc.PushTransform(twist);
+                Eyes.Draw(dc, bodyBounds, headOffset, blink, drowsiness, eyeScale, mouth.Frame, dozeMouth);
+                if (twist != null) dc.Pop();
+                if (PenActive(now)) DrawPen(dc); else DrawMouse(dc, click);
                 PixelKeyboardArt.Draw(dc, desk, right.Scan, r, left.Scan, l);
+                PixelKeyboardArt.DrawGlow(dc, desk, reactions.GlowPhase(now), reactions.GlowStrength(now));
+                if (twist != null) dc.PushTransform(twist);
                 // Both forelegs start on the visible chest and pass in front of the desk.
                 DrawForeleg(dc, left.Rest, lp, lean + startle.X, dip + startle.Y);
                 DrawForeleg(dc, right.Rest, rp, lean + startle.X, dip + startle.Y);
                 DrawPaw(dc, lp, false);
                 DrawPaw(dc, rp, true);
+                if (twist != null) dc.Pop();
+            }
+            if (panic)
+            {
+                double x = bodyBounds.Right - 4, y = bodyBounds.Top + 12 + 2 * Math.Sin(now / 80);
+                dc.DrawRoundedRectangle(Brushes.IndianRed, null, new Rect(x, y, 4, 11), 2, 2);
+                dc.DrawEllipse(Brushes.IndianRed, null, new Point(x + 2, y + 16), 2.4, 2.4);
             }
             if (showKeyLabels)
             {

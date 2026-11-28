@@ -129,7 +129,12 @@ namespace WheekKeys
             shareSwitch = MakeSwitch(owner.Network.ShareActivity, delegate(bool value) {
                 if (!refreshingShareSwitch) owner.Network.ShareActivity = value;
             });
-            controls.Children.Add(BuildToggleRow("同步按键和鼠标动作", shareSwitch));
+            controls.Children.Add(BuildToggleRow("同步敲击和点击动画", shareSwitch));
+            TextBlock privacyHint = Label(10, Muted);
+            privacyHint.Text = "具体键位只在本机处理。进入房间后会分享昵称、外观和累计次数。开启同步后，好友还会看到通用敲击和鼠标点击动画。";
+            privacyHint.TextWrapping = TextWrapping.Wrap;
+            privacyHint.Margin = new Thickness(1, 2, 1, 0);
+            controls.Children.Add(privacyHint);
 
             StackPanel content = new StackPanel();
             content.Children.Add(controls);
@@ -360,6 +365,8 @@ namespace WheekKeys
 
         internal void RefreshActivity()
         {
+            todayActivity.Text = String.Format("今日   按键 {0:N0} · 点击 {1:N0}", owner.Today.Keys, owner.Today.Clicks);
+            totalActivity.Text = String.Format("累计   按键 {0:N0} · 点击 {1:N0}", owner.KeyCount, owner.ClickCount);
             if (networkPage == null || networkPage.Visibility != Visibility.Visible) return;
             LocalPeers network = owner.Network;
             bool inRoom = network.Enabled;

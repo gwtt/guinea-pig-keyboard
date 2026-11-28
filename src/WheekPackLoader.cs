@@ -23,7 +23,11 @@ namespace WheekKeys
             {
                 foreach (string path in Directory.EnumerateFiles(directory, "*.wheek"))
                 {
-                    try { PetSkin.Register(Read(ReadFile(path))); }
+                    try
+                    {
+                        PetSkin skin = Read(ReadFile(path));
+                        if (Path.GetFileName(path) == skin.Id.Substring("wheek-".Length) + ".wheek") PetSkin.Register(skin);
+                    }
                     catch (Exception e) { if (!IsPackError(e)) throw; }
                 }
             }
@@ -47,6 +51,16 @@ namespace WheekKeys
             finally { if (File.Exists(pending)) File.Delete(pending); }
             PetSkin.Register(skin);
             return skin;
+        }
+
+        internal static bool Uninstall(string id, string directory)
+        {
+            PetSkin skin = PetSkin.Find(id);
+            if (skin == null || !skin.IsCustom || skin.Id != id ||
+                !Regex.IsMatch(id, @"\Awheek-[a-z0-9-]+\z")) return false;
+            string path = Path.Combine(directory, id.Substring("wheek-".Length) + ".wheek");
+            File.Delete(path);
+            return PetSkin.Unregister(id);
         }
 
         internal static bool IsPackError(Exception e)

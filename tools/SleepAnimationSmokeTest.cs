@@ -40,6 +40,15 @@ internal static class SleepAnimationSmokeTest
         Assembly assembly = Assembly.LoadFile(Path.GetFullPath(args[0]));
         Type type = assembly.GetType("WheekKeys.IdleSleepAnimation", true);
         object animation = Activator.CreateInstance(type, true);
+        var delay = type.GetMethod("SetDelay", BindingFlags.Instance | BindingFlags.NonPublic);
+        foreach (int seconds in new[] { 15, 60, 0 })
+        {
+            delay.Invoke(animation, new object[] { seconds, 0.0 });
+            double when = seconds == 0 ? 600000 : seconds * 1000 + 701;
+            Check((int)type.GetMethod("EyeStage").Invoke(animation, new object[] { when }) == (seconds == 0 ? 0 : 3),
+                "configured sleep delay " + seconds);
+        }
+        delay.Invoke(animation, new object[] { 30, 0.0 });
         Check(Convert.ToDouble(type.GetField("WakeMilliseconds").GetValue(null)) == 420, "wake duration");
         Check(Convert.ToDouble(type.GetField("MotionWakeMilliseconds").GetValue(null)) == 1600, "motion wake duration");
         Check(Math.Abs(Convert.ToDouble(type.GetMethod("MotionReadiness").Invoke(animation, new object[] { 0.0 })) - 1.0) < 0.0001, "never-slept motion readiness");

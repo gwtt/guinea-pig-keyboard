@@ -114,7 +114,8 @@ internal static class PixelSkinSmokeTest
                     && Convert.ToInt64(windowType.GetProperty("ClickCount", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(owner, null)) == 6789
                     && (string)windowType.GetProperty("Nickname", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(owner, null) == "测试豚鼠", "legacy placeholder keeps subsequent fields aligned");
             }
-            CheckPacks(assembly);
+            CheckPacks(assembly, owner);
+            CheckDailyActivity(assembly);
             CheckRenderLifecycle(assembly);
             CheckNetworkCompatibility(assembly);
             CheckReleaseSelection(assembly);
@@ -179,9 +180,30 @@ internal static class PixelSkinSmokeTest
         Check(!LogicalElements(settings).OfType<Button>().Any(button => ButtonText(button) == "检查更新"), "no manual update check button");
         Check(LogicalElements(settings).OfType<Button>().Any(button => ButtonText(button) == "反馈问题"), "settings feedback entry");
         Check(!LogicalElements(settings).OfType<Button>().Any(button => ButtonText(button) == "回到右下角"), "no move-to-corner setting");
-        Button decrease = LogicalElements(settings).OfType<Button>().Single(button => System.Windows.Automation.AutomationProperties.GetAutomationId(button) == "size-decrease");
-        var sizeRow = LogicalTreeHelper.GetParent(decrease) as StackPanel;
-        Check(sizeRow != null && sizeRow.Orientation == Orientation.Horizontal && sizeRow.HorizontalAlignment == HorizontalAlignment.Left, "size controls left aligned");
+        var sliders = LogicalElements(settings).OfType<Slider>().ToArray();
+        Slider size = sliders.Single(slider => System.Windows.Automation.AutomationProperties.GetAutomationId(slider) == "pet-size");
+        Slider opacity = sliders.Single(slider => System.Windows.Automation.AutomationProperties.GetAutomationId(slider) == "pet-opacity");
+        size.Value = 317;
+        Check(((Window)owner).Width == 317, "continuous size selection");
+        size.Value = 330;
+        opacity.Value = 64;
+        Check(((Window)owner).Opacity == 0.64, "opacity preview");
+        var sleep = LogicalElements(settings).OfType<ComboBox>().Single();
+        sleep.SelectedIndex = 3;
+        Check((int)owner.GetType().GetProperty("SleepSeconds", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(owner, null) == 0, "sleep can be disabled");
+        var profile = File.ReadAllLines((string)Field(owner, "settingsPath"));
+        Check(profile[13] == "64" && profile[14] == "0", "appearance preferences are persisted");
+        sleep.SelectedIndex = 1;
+        opacity.Value = 100;
+        var grid = (UniformGrid)Field(settings, "skinGrid");
+        var groupButtons = (IDictionary)Field(settings, "groupButtons");
+        foreach (string group in new[] { "短毛", "长毛", "趴趴猪", "自定义" })
+        {
+            ((Button)groupButtons[group]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var visible = grid.Children.OfType<FrameworkElement>().Where(tile => tile.Visibility == Visibility.Visible).ToArray();
+            Check(visible.Length == (group == "自定义" ? 0 : group == "趴趴猪" ? 8 : 7) && visible.All(tile => Equals(tile.Tag, group)), "filter " + group);
+        }
+        Check(LogicalText(settings).Contains("在爱发电支持豚鼠") && LogicalText(settings).Contains("喂草"), "support and feeding entries");
         object updater = owner.GetType().GetProperty("Updater", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(owner, null);
         Type updaterType = updater.GetType();
         Type releaseType = updaterType.GetNestedType("Release", BindingFlags.NonPublic);
@@ -350,6 +372,24 @@ internal static class PixelSkinSmokeTest
         return value.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(value);
     }
 
+    private static void CheckDailyActivity(Assembly app)
+    {
+        const BindingFlags methods = BindingFlags.Instance | BindingFlags.NonPublic;
+        Type type = app.GetType("WheekKeys.DailyActivity", true);
+        object activity = Activator.CreateInstance(type, true);
+        string day = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        type.GetMethod("Restore", methods).Invoke(activity, new object[] { day, "999", "7" });
+        var key = type.GetMethod("RecordKey", methods);
+        Check(((string)key.Invoke(activity, new object[] { 2.0 })).Contains("1000"), "daily milestone");
+        for (int n = 0; n < 10; n++) Check(key.Invoke(activity, new object[] { 3.0 + n * 0.01 }) == null, "milestone cooldown");
+        string burst = null;
+        for (int n = 0; n < 10; n++) burst = (string)key.Invoke(activity, new object[] { 34.0 + n * 0.08 });
+        Check(burst != null, "typing burst after cooldown");
+        type.GetMethod("StartDay", methods).Invoke(activity, new object[] { DateTime.Today.AddDays(1) });
+        Check((long)type.GetProperty("Keys", methods).GetValue(activity, null) == 0 &&
+            (long)type.GetProperty("Clicks", methods).GetValue(activity, null) == 0, "daily rollover resets keys and clicks");
+    }
+
     private static void Pump()
     {
         var frame = new DispatcherFrame();
@@ -357,7 +397,7 @@ internal static class PixelSkinSmokeTest
         Dispatcher.PushFrame(frame);
     }
 
-    private static void CheckPacks(Assembly assembly)
+    private static void CheckPacks(Assembly assembly, object owner)
     {
         MethodInfo read = assembly.GetType("WheekKeys.WheekPackLoader", true).GetMethod("Read", BindingFlags.Static | BindingFlags.NonPublic);
         foreach (string mode in new[] { "pixel", "drawn" })
@@ -383,6 +423,56 @@ internal static class PixelSkinSmokeTest
                 Check(rejected, "drawn pack rejected");
             }
         }
+        Type loader = assembly.GetType("WheekKeys.WheekPackLoader", true);
+        Type skinType = assembly.GetType("WheekKeys.PetSkin", true);
+        MethodInfo install = loader.GetMethod("Install", BindingFlags.Static | BindingFlags.NonPublic);
+        MethodInfo uninstall = loader.GetMethod("Uninstall", BindingFlags.Static | BindingFlags.NonPublic);
+        string root = Path.Combine(Path.GetTempPath(), "wheek-pack-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string source = Path.Combine(root, "source.wheek"), directory = Path.Combine(root, "installed");
+            Action<string> write = delegate(string name) {
+                using (var file = File.Create(source))
+                using (var zip = new ZipArchive(file, ZipArchiveMode.Create))
+                using (var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open()))
+                    writer.Write("{\"id\":\"smoke\",\"name\":\"" + name + "\"}");
+            };
+            write("First");
+            object first = install.Invoke(null, new object[] { source, directory });
+            Check((string)skinType.GetProperty("Group").GetValue(first, null) == "自定义", "custom pack group");
+            write("Second");
+            object second = install.Invoke(null, new object[] { source, directory });
+            Check((string)skinType.GetField("Name").GetValue(second) == "Second", "pack replacement");
+            string canonical = Path.Combine(directory, "smoke.wheek");
+            string foreign = Path.Combine(directory, "other.wheek");
+            File.Copy(canonical, foreign);
+            Check(!(bool)uninstall.Invoke(null, new object[] { "pixel-tricolor", directory }), "built-in pack protected");
+            Check((bool)uninstall.Invoke(null, new object[] { "wheek-smoke", directory }), "custom pack removed");
+            loader.GetMethod("LoadInstalled", BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, new object[] { directory });
+            Check(!File.Exists(canonical) && File.Exists(foreign) && skinType.GetMethod("Find").Invoke(null, new object[] { "wheek-smoke" }) == null, "noncanonical pack ignored");
+            install.Invoke(null, new object[] { source, directory });
+            File.Delete(canonical);
+            Directory.CreateDirectory(canonical);
+            File.WriteAllText(Path.Combine(canonical, "keep"), "keep");
+            bool rejectedDirectory = false;
+            try { uninstall.Invoke(null, new object[] { "wheek-smoke", directory }); }
+            catch (TargetInvocationException e) { rejectedDirectory = e.InnerException is IOException || e.InnerException is UnauthorizedAccessException; }
+            Check(rejectedDirectory && File.Exists(Path.Combine(canonical, "keep")) && skinType.GetMethod("Find").Invoke(null, new object[] { "wheek-smoke" }) != null, "pack directory protected");
+            Directory.Delete(canonical, true);
+            uninstall.Invoke(null, new object[] { "wheek-smoke", directory });
+            const BindingFlags instance = BindingFlags.Instance | BindingFlags.NonPublic;
+            var ownerType = owner.GetType();
+            ownerType.GetField("ready", instance).SetValue(owner, true);
+            ownerType.GetMethod("ImportSkin", instance).Invoke(owner, new object[] { source });
+            string settingsPath = (string)Field(owner, "settingsPath");
+            Check(File.ReadAllLines(settingsPath)[5] == "wheek-smoke", "import selects and saves the custom skin");
+            object selected = ownerType.GetProperty("ActiveSkin", instance).GetValue(owner, null);
+            ownerType.GetMethod("UninstallSkin", instance).Invoke(owner, new[] { selected });
+            Check(File.ReadAllLines(settingsPath)[5] == "pixel-tricolor" && File.Exists(source), "removing the active skin saves fallback and preserves source");
+            Directory.Delete(Path.Combine(Path.GetDirectoryName(settingsPath), "skins"));
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     private static void CheckRenderLifecycle(Assembly assembly)

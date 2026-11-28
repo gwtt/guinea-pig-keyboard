@@ -39,7 +39,10 @@ namespace WheekKeys
         private readonly TextBlock startupStatus = Label(10.5, Muted);
         private readonly DispatcherTimer deactivateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
         private Button installUpdate;
-        private readonly TextBlock sizeValue;
+        private readonly TextBlock todayActivity = Label(12, Ink), totalActivity = Label(10.5, Muted);
+        private readonly Dictionary<string, Button> groupButtons = new Dictionary<string, Button>();
+        private readonly TextBlock emptySkins = Label(11, Muted);
+        private string selectedGroup;
         private bool closing, showingImportDialog, refreshingStartup;
 
         public PetSettings(PetWindow owner) : this(owner, StartupRegistration.CurrentUser) { }
@@ -73,25 +76,26 @@ namespace WheekKeys
             layout.Children.Add(header);
 
             StackPanel body = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
-            StackPanel sizeButtons = new StackPanel { Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(1, 0, 0, 6) };
-            sizeButtons.Children.Add(new TextBlock { Text = "大小", FontSize = 10.5, FontWeight = FontWeights.SemiBold,
-                Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
-            Button decrease = MakeButton(new TextBlock { Text = "−", FontSize = 17, Margin = new Thickness(0, -3, 0, 0) }, Paper2, Ink, 28, 28);
-            AutomationProperties.SetAutomationId(decrease, "size-decrease");
-            AutomationProperties.SetName(decrease, "缩小");
-            decrease.Margin = new Thickness(0, 0, 5, 0);
-            decrease.Click += delegate { owner.SetWidth(owner.PetWidth - 40); RefreshState(); };
-            sizeValue = new TextBlock { Width = 48, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = Ink };
-            Button increase = MakeButton(new TextBlock { Text = "+", FontSize = 16, Margin = new Thickness(0, -2, 0, 0) }, Paper2, Ink, 28, 28);
-            AutomationProperties.SetAutomationId(increase, "size-increase");
-            AutomationProperties.SetName(increase, "放大");
-            increase.Margin = new Thickness(5, 0, 0, 0);
-            increase.Click += delegate { owner.SetWidth(owner.PetWidth + 40); RefreshState(); };
-            sizeButtons.Children.Add(decrease);
-            sizeButtons.Children.Add(sizeValue);
-            sizeButtons.Children.Add(increase);
-            body.Children.Add(sizeButtons);
+            DockPanel activity = new DockPanel { Margin = new Thickness(1, 0, 1, 8) };
+            Button feed = ActionButton("喂草", SageSoft, delegate { Close(); owner.InteractLocally(true); });
+            DockPanel.SetDock(feed, Dock.Right);
+            activity.Children.Add(feed);
+            activity.Children.Add(new StackPanel { Children = { todayActivity, totalActivity } });
+            body.Children.Add(activity);
+            body.Children.Add(SliderRow("大小", "pet-size", 180, 600, owner.PetWidth, 100.0 / 310, owner.SetWidth));
+            body.Children.Add(SliderRow("透明度", "pet-opacity", 20, 100, owner.Opacity * 100, 1, owner.SetOpacityPercent));
+            body.Children.Add(BuildToggleRow("全屏应用时自动隐藏", MakeSwitch(owner.HideInFullscreen, owner.SetHideInFullscreen)));
+            ComboBox sleep = new ComboBox { Width = 78, Height = 25, VerticalContentAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetName(sleep, "打瞌睡");
+            foreach (int seconds in new[] { 15, 30, 60, 0 })
+            {
+                var item = new ComboBoxItem { Content = seconds == 0 ? "关闭" : seconds + " 秒", Tag = seconds };
+                sleep.Items.Add(item);
+                if (seconds == owner.SleepSeconds) sleep.SelectedItem = item;
+            }
+            sleep.SelectionChanged += delegate { owner.SetSleepSeconds((int)((ComboBoxItem)sleep.SelectedItem).Tag); };
+            body.Children.Add(SettingRow("打瞌睡", sleep));
+            selectedGroup = owner.ActiveSkin.Group;
             body.Children.Add(BuildSkins());
             body.Children.Add(BuildDeskSkins());
 
@@ -103,6 +107,7 @@ namespace WheekKeys
             AutomationProperties.SetAutomationId(passthrough, "toggle-mouse-pass-through");
             AutomationProperties.SetName(passthrough, "鼠标穿透");
             toggles.Children.Add(BuildToggleRow("按键气泡", labels));
+            toggles.Children.Add(BuildToggleRow("连击键帽流光", MakeSwitch(owner.KeyboardGlowEnabled, delegate(bool value) { owner.KeyboardGlowEnabled = value; })));
             toggles.Children.Add(BuildToggleRow("鼠标穿透", passthrough));
             startupSwitch = MakeSwitch(false, SetStartupEnabled);
             AutomationProperties.SetAutomationId(startupSwitch, "toggle-start-at-login");
@@ -211,7 +216,7 @@ namespace WheekKeys
             return tab;
         }
 
-        private static DockPanel BuildGroupPage()
+        private DockPanel BuildGroupPage()
         {
             DockPanel page = new DockPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             TextBlock hint = Label(12, Muted);
@@ -220,6 +225,12 @@ namespace WheekKeys
             hint.Margin = new Thickness(0, 0, 0, 10);
             DockPanel.SetDock(hint, Dock.Top);
             page.Children.Add(hint);
+            Button support = ActionButton("在爱发电支持豚鼠", SageSoft,
+                delegate { PetWindow.OpenLink("https://afdian.com/a/guinea_pig_garden", "爱发电"); });
+            support.HorizontalAlignment = HorizontalAlignment.Center;
+            support.Margin = new Thickness(0, 6, 0, 0);
+            DockPanel.SetDock(support, Dock.Bottom);
+            page.Children.Add(support);
             Image code = new Image { Source = LoadSettingsImage("qq-group.png"), MaxWidth = 224, MaxHeight = 224, Stretch = Stretch.Uniform };
             AutomationProperties.SetName(code, "QQ 群二维码");
             page.Children.Add(code);
@@ -275,8 +286,21 @@ namespace WheekKeys
 
         private UIElement BuildSkins()
         {
-            StackPanel section = BuildSection("毛色");
+            StackPanel section = BuildSection("外观");
+            UniformGrid groups = new UniformGrid { Rows = 1, Columns = 4 };
+            foreach (string name in new[] { "短毛", "长毛", "趴趴猪", "自定义" })
+            {
+                string group = name;
+                Button tab = ActionButton(group, Paper2, delegate { ShowSkinGroup(group); });
+                tab.Margin = new Thickness(1);
+                groupButtons.Add(group, tab);
+                groups.Children.Add(tab);
+            }
+            section.Children.Add(groups);
             section.Children.Add(skinGrid);
+            emptySkins.Text = "还没有自定义外观";
+            emptySkins.Margin = new Thickness(2, 5, 0, 0);
+            section.Children.Add(emptySkins);
             Button import = ActionButton("导入外观 (.wheek)…", Paper2, PickSkin);
             import.HorizontalAlignment = HorizontalAlignment.Left;
             import.Margin = new Thickness(0, 5, 0, 1);
@@ -332,11 +356,56 @@ namespace WheekKeys
                 AutomationProperties.SetName(button, current.Name);
                 button.Click += delegate { owner.SetSkin(current); RefreshState(); };
                 skinButtons.Add(current.Id, button);
-                skinGrid.Children.Add(button);
+                FrameworkElement tile = button;
+                if (current.IsCustom)
+                {
+                    var remove = ActionButton("×", Paper, delegate { ConfirmUninstall(current); });
+                    remove.Padding = new Thickness(2, 0, 2, 0);
+                    remove.Width = 18;
+                    remove.ToolTip = "删除 " + current.Name;
+                    AutomationProperties.SetName(remove, "删除 " + current.Name);
+                    DockPanel.SetDock(remove, Dock.Right);
+                    tile = new DockPanel { Children = { remove, button } };
+                }
+                tile.Tag = current.Group;
+                skinGrid.Children.Add(tile);
             }
+            ShowSkinGroup(selectedGroup);
+        }
+
+        private void ShowSkinGroup(string name)
+        {
+            selectedGroup = name;
+            bool empty = true;
+            foreach (FrameworkElement tile in skinGrid.Children)
+            {
+                bool shown = (string)tile.Tag == name;
+                tile.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+                if (shown) empty = false;
+            }
+            emptySkins.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var tab in groupButtons) tab.Value.Background = tab.Key == name ? SageSoft : Paper2;
+        }
+
+        private void ConfirmUninstall(PetSkin skin)
+        {
+            showingImportDialog = true;
+            try
+            {
+                if (MessageBox.Show(this, "删除已安装的「" + skin.Name + "」？", "删除自定义外观",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+                ShowSkinStatus(owner.UninstallSkin(skin));
+            }
+            finally { showingImportDialog = false; }
         }
 
         internal void SkinImported(string message)
+        {
+            selectedGroup = owner.ActiveSkin.Group;
+            ShowSkinStatus(message);
+        }
+
+        private void ShowSkinStatus(string message)
         {
             RefreshSkinButtons();
             RefreshState();
@@ -422,12 +491,33 @@ namespace WheekKeys
 
         private Grid BuildToggleRow(string label, ToggleButton toggle)
         {
+            AutomationProperties.SetName(toggle, label);
+            return SettingRow(label, toggle);
+        }
+
+        private Grid SliderRow(string label, string id, double min, double max, double initial, double percentScale, Action<double> change)
+        {
+            var value = Label(11, Ink);
+            value.Width = 37;
+            value.TextAlignment = TextAlignment.Right;
+            var slider = new Slider { Minimum = min, Maximum = max, Value = initial, TickFrequency = 1,
+                IsSnapToTickEnabled = true, IsMoveToPointEnabled = true, Width = 138, VerticalAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetName(slider, label);
+            AutomationProperties.SetAutomationId(slider, id);
+            Action update = delegate { value.Text = Math.Round(slider.Value * percentScale).ToString("0", CultureInfo.InvariantCulture) + "%"; };
+            update();
+            slider.ValueChanged += delegate { update(); change(slider.Value); };
+            return SettingRow(label, new StackPanel { Orientation = Orientation.Horizontal, Children = { slider, value } });
+        }
+
+        private Grid SettingRow(string label, FrameworkElement control)
+        {
             Grid row = new Grid { Height = 31, Margin = new Thickness(1, 0, 1, 1) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.Children.Add(new TextBlock { Text = label, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Foreground = Ink });
-            Grid.SetColumn(toggle, 1);
-            row.Children.Add(toggle);
+            Grid.SetColumn(control, 1);
+            row.Children.Add(control);
             return row;
         }
 
@@ -497,7 +587,6 @@ namespace WheekKeys
 
         private void RefreshState()
         {
-            sizeValue.Text = Math.Round(owner.PetWidth / 310.0 * 100, MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture) + "%";
             foreach (PetSkin skin in PetSkin.Available)
             {
                 Button button = skinButtons[skin.Id];

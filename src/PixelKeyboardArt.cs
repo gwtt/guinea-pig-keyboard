@@ -207,5 +207,21 @@ namespace WheekKeys
             KeySpec key = FindKey(scan, right);
             dc.DrawImage(atlas.Pressed[key.Scan], key.Bounds);
         }
+
+        internal static void DrawGlow(DrawingContext dc, DeskSkin desk, double phase, double strength)
+        {
+            if (strength <= 0) return;
+            double front = KeyboardBounds.Left + phase * (KeyboardBounds.Width + 24);
+            foreach (KeySpec key in Specs)
+            {
+                double gap = Math.Abs(key.Center.X + (key.Center.Y - KeyboardBounds.Top) * 0.36 - front);
+                if (gap >= 48) continue;
+                dc.PushOpacity(0.55 * (1 - gap / 48) * strength);
+                Rect cap = key.Bounds;
+                cap.Inflate(-1.4, -1.4);
+                dc.DrawRoundedRectangle(desk.PixelBubbleAccent, null, cap, 2, 2);
+                dc.Pop();
+            }
+        }
     }
 }

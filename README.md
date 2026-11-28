@@ -2,12 +2,12 @@
   <img src="assets/avatar.png" alt="三花荷兰猪头像" width="128" height="128">
 </p>
 
-<h1 align="center">豚鼠键盘</h1>
+<h1 align="center">豚鼠键盘 · 具体按键只在本机处理</h1>
 
 <p align="center">
   住在 Windows 和 macOS 桌面上的小荷兰猪。<br>
   你打字，它就用小爪敲键盘，嘴巴也会轻轻动一下。鼠标移动时它会跟着看，滚动时会伸爪拨滚轮。<br>
-  30 秒没动键鼠，它会眯眼、打哈欠，脑袋一点一点地打瞌睡。再碰键鼠，它就醒了。
+  默认 30 秒没动键鼠，它会眯眼、打哈欠，脑袋一点一点地打瞌睡。再碰键鼠，它就醒了。
 </p>
 
 <p align="center">
@@ -28,20 +28,24 @@
 
 Windows 10 或 11 用户下载后双击 `WheekKeys.exe` 即可。Mac 用户（macOS 11 或更新版本）解压后把 `WheekKeys.app` 拖进「应用程序」。第一次打开，从菜单栏的荷兰猪图标选择「启用输入监控权限」，允许后重新打开桌宠，它就能跟着你打字了。Mac 版尚未经 Apple 公证，若系统阻止打开，可查看 [Apple 的说明](https://support.apple.com/zh-cn/102445)。
 
-首次打开时，荷兰猪使用三花，大小为 58%。按住荷兰猪可拖动，右键可调整大小、切换外观。Windows 提供 22 款外观，包括三花、黑白、黄白、奶油、白加州、美泰、雕灰和长毛猪共八款侧身手绘趴趴猪，身体会跟着按键位置移动，并靠近鼠标握住它。Mac 提供 18 款像素外观。开启鼠标穿透后，从 Windows 托盘或 macOS 菜单栏打开设置。
+首次打开时，荷兰猪使用三花，大小为 58%。按住可拖动，双击摸头，右键可喂草、查看今天的按键和点击次数。桌宠设置里可以调大小和透明度、选择打瞌睡的时间，也可以让它在全屏时自动隐藏。开启鼠标穿透后，从 Windows 托盘或 macOS 菜单栏打开设置。
+
+Windows 和 macOS 都有 22 款内置外观，其中 8 款是手绘趴趴猪，另有 3 套键鼠皮肤。把像素外观包（`.wheek`）拖到桌宠或设置面板即可试穿，在「自定义」里可以删除已安装的外观。
 
 启动桌宠或打开设置时会自动检查更新。发现新版后，点击设置顶部的「更新到最新版本」即可在 Windows 上安装更新，或在 Mac 上下载新版安装包。
 
-支持联机功能。
+快速来回晃动鼠标，小猪会原地扭身，连蹦两下，这就是荷兰猪兴奋时的「爆米花跳」。连按四次退格键，它会慌张地瞪大眼睛。开启「连击键帽流光」，快速打字时键帽会依次亮起来。Windows 上，使用提供标准 HID 笔报告的数位板时，小猪会握笔，笔尖会随落笔轻重变化。
+
+<p align="center">
+  <img src="docs/popcorning.gif" alt="三花豚鼠在可可黑金键盘前扭身连跳两次" width="400">
+</p>
+
+### 隐私说明
+
+**具体键位和输入文字不会上传。** 键位只在本机内存里驱动动画，设置文件保存今日及累计次数。桌宠不保存逐键记录和笔迹。
+
+支持联机功能。加入房间后会分享昵称、外观和累计次数。开启「同步敲击和点击动画」后，好友还能看到通用拍键和鼠标点击动作。该隐私说明适用于本版本，旧版本仍可能发送具体键位。
 
 非盈利的vibe项目，纯粹分享给同样喜欢荷兰猪的朋友。
 
-感谢 [BongoCat](https://github.com/KeyLimePie7/BongoCat)、[DesktopKitty](https://github.com/MayankArambhi/DesktopKitty) 提供的参考。
-
-## ☕ Buy me a coffee
-
-如果这只小豚鼠让你开心，欢迎请我喝杯咖啡。
-
-| 支付宝 | 微信支付 |
-| :---: | :---: |
-| <img src="docs/support/alipay.png" alt="支付宝收款码" width="168"> | <img src="docs/support/wechat.png" alt="微信收款码" width="168"> |
+感谢 [BongoCat](https://github.com/KeyLimePie7/BongoCat)、[DesktopKitty](https://github.com/MayankArambhi/DesktopKitty) 和 [KuroCat](https://github.com/chanke17/KuroCat) 提供的参考。
