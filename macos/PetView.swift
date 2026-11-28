@@ -519,15 +519,11 @@ final class PetView: NSView {
         guard let original = image(kind + ".png"), let reference = image("reference-" + kind + ".png"),
               let target = image(kind + "-" + theme + ".png"),
               reference.width == target.width, reference.height == target.height,
-              let source = editableRGBABitmap(reference), let themed = editableRGBABitmap(target),
-              let output = editableRGBABitmap(original) else { return nil }
-        func components(_ color: NSColor?) -> [Int]? {
-            guard let c = color?.usingColorSpace(.sRGB), c.alphaComponent > 0 else { return nil }
-            return [c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) }
-        }
+              let source = EditableRGBABitmap(reference), let themed = EditableRGBABitmap(target),
+              let output = EditableRGBABitmap(original) else { return nil }
         var counts: [[Int]: [[Int]: Int]] = [:]
-        for y in 0..<source.pixelsHigh { for x in 0..<source.pixelsWide {
-            if let from = components(source.colorAt(x: x, y: y)), let to = components(themed.colorAt(x: x, y: y)) {
+        for y in 0..<source.height { for x in 0..<source.width {
+            if let from = source.rgb(atX: x, y: y), let to = themed.rgb(atX: x, y: y) {
                 counts[from, default: [:]][to, default: 0] += 1
             }
         } }
@@ -539,14 +535,13 @@ final class PetView: NSView {
             let r = a[0] - b[0], g = a[1] - b[1], blue = a[2] - b[2]
             return r * r + g * g + blue * blue
         }
-        for y in 0..<output.pixelsHigh { for x in 0..<output.pixelsWide {
-            guard let color = output.colorAt(x: x, y: y), let from = components(color) else { continue }
+        for y in 0..<output.height { for x in 0..<output.width {
+            guard let from = output.rgb(atX: x, y: y) else { continue }
             if palette[from] == nil, let nearest = sourcePalette.min(by: { distance($0, from) < distance($1, from) }) {
                 palette[from] = palette[nearest]
             }
             guard let to = palette[from] else { continue }
-            output.setColor(NSColor(srgbRed: CGFloat(to[0]) / 255, green: CGFloat(to[1]) / 255,
-                                    blue: CGFloat(to[2]) / 255, alpha: color.alphaComponent), atX: x, y: y)
+            output.setRGB(to, atX: x, y: y)
         } }
         guard let result = output.cgImage else { return nil }
         images[cacheKey] = result

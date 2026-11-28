@@ -1,14 +1,37 @@
 import AppKit
 
-func editableRGBABitmap(_ image: CGImage) -> NSBitmapImageRep? {
-    guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: image.width, pixelsHigh: image.height,
-        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-        bytesPerRow: image.width * 4, bitsPerPixel: 32),
-        let context = NSGraphicsContext(bitmapImageRep: bitmap)?.cgContext else { return nil }
-    context.interpolationQuality = .none
-    context.setBlendMode(.copy)
-    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-    return bitmap
+struct EditableRGBABitmap {
+    private let context: CGContext
+    private let pixels: UnsafeMutablePointer<UInt8>
+    var width: Int { context.width }
+    var height: Int { context.height }
+    var cgImage: CGImage? { context.makeImage() }
+
+    init?(_ image: CGImage) {
+        let format = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: format),
+              let data = context.data else { return nil }
+        context.interpolationQuality = .none
+        context.setBlendMode(.copy)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        self.context = context
+        pixels = data.assumingMemoryBound(to: UInt8.self)
+    }
+
+    func rgb(atX x: Int, y: Int) -> [Int]? {
+        let pixel = pixels.advanced(by: y * context.bytesPerRow + x * 4)
+        let alpha = Int(pixel[3])
+        guard alpha > 0 else { return nil }
+        return (0..<3).map { min(255, (Int(pixel[$0]) * 255 + alpha / 2) / alpha) }
+    }
+
+    func setRGB(_ rgb: [Int], atX x: Int, y: Int) {
+        let pixel = pixels.advanced(by: y * context.bytesPerRow + x * 4)
+        let alpha = Int(pixel[3])
+        for channel in 0..<3 { pixel[channel] = UInt8((rgb[channel] * alpha + 127) / 255) }
+    }
 }
 
 struct PetSkin {
@@ -73,19 +96,17 @@ struct PetSkin {
             default: brown = 0xE7C383
             }
             let preserveLight = ["prone-black-white", "prone-golden-white", "prone-longhair"].contains(id)
-            guard let bitmap = editableRGBABitmap(source) else { return nil }
-            for y in 0..<bitmap.pixelsHigh {
-                for x in 0..<bitmap.pixelsWide {
-                    guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), pixel.alphaComponent > 0 else { continue }
-                    let r = pixel.redComponent * 255, g = pixel.greenComponent * 255, b = pixel.blueComponent * 255
+            guard let bitmap = EditableRGBABitmap(source) else { return nil }
+            let coatRGB = [Int(brown >> 16), Int((brown >> 8) & 255), Int(brown & 255)]
+            for y in 0..<bitmap.height {
+                for x in 0..<bitmap.width {
+                    guard let pixel = bitmap.rgb(atX: x, y: y) else { continue }
+                    let r = Double(pixel[0]), g = Double(pixel[1]), b = Double(pixel[2])
                     if r < 90 && g < 65 && b < 45 { continue }
                     let light = r * 0.2126 + g * 0.7152 + b * 0.0722
                     if preserveLight && light > 180 { continue }
-                    let factor = min(1.12, max(0.75, light / (light > 180 ? 235 : 97))) / 255
-                    let color = NSColor(srgbRed: min(1, CGFloat(brown >> 16) * factor),
-                        green: min(1, CGFloat((brown >> 8) & 255) * factor), blue: min(1, CGFloat(brown & 255) * factor),
-                        alpha: pixel.alphaComponent)
-                    bitmap.setColor(color, atX: x, y: y)
+                    let factor = min(1.12, max(0.75, light / (light > 180 ? 235 : 97)))
+                    bitmap.setRGB(coatRGB.map { min(255, Int((Double($0) * factor).rounded())) }, atX: x, y: y)
                 }
             }
             Self.limbImages[key] = bitmap.cgImage
@@ -134,7 +155,7 @@ struct PetSkin {
     }
 
     private static func recolor(_ source: CGImage, base: PetSkin, fur: UInt32?, ink: UInt32?) -> CGImage? {
-        guard let rep = editableRGBABitmap(source) else { return nil }
+        guard let rep = EditableRGBABitmap(source) else { return nil }
         func rgb(_ value: UInt32) -> [Int] { [Int((value >> 16) & 255), Int((value >> 8) & 255), Int(value & 255)] }
         func components(_ color: CGColor) -> [Int] {
             let c = NSColor(cgColor: color)!.usingColorSpace(.sRGB)!
@@ -176,10 +197,9 @@ struct PetSkin {
             if (coat == "pixel-golden-white" || coat == "pixel-longhair-gold-white") && (left || right || leftSide) { return rgb(0xEBD29B) }
             return targetFur
         }
-        for y in 0..<rep.pixelsHigh {
-            for x in 0..<rep.pixelsWide {
-                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.alphaComponent > 0 else { continue }
-                let v = [c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) }
+        for y in 0..<rep.height {
+            for x in 0..<rep.width {
+                guard let v = rep.rgb(atX: x, y: y) else { continue }
                 var next = v
                 if v == rgb(0xFFFAF1) || (fur != nil && !(v[0] < 110 && v[1] < 85 && v[2] < 70)) {
                     next = fur != nil ? targetFur : furAt(x, y)
@@ -188,8 +208,7 @@ struct PetSkin {
                 else if v == rgb(0xB59779) { next = blend(0.35) }
                 else if v == rgb(0xD2C1A9) { next = blend(0.16) }
                 else if v == rgb(0x7C614D) { next = blend(0.62) }
-                rep.setColor(NSColor(srgbRed: CGFloat(next[0]) / 255, green: CGFloat(next[1]) / 255,
-                                     blue: CGFloat(next[2]) / 255, alpha: c.alphaComponent), atX: x, y: y)
+                if next != v { rep.setRGB(next, atX: x, y: y) }
             }
         }
         return rep.cgImage
