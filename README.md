@@ -2,7 +2,7 @@
   <img src="assets/avatar.png" alt="三花荷兰猪头像" width="128" height="128">
 </p>
 
-<h1 align="center">豚鼠键盘 · 具体按键只在本机处理</h1>
+<h1 align="center">豚鼠键盘</h1>
 
 <p align="center">
   住在 Windows 和 macOS 桌面上的小荷兰猪。<br>
