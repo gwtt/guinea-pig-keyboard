@@ -119,11 +119,11 @@ final class PetSettingsViewController: NSViewController {
     private lazy var removeSkinButton = controlButton("删除当前外观", action: #selector(deleteSkin))
     private let skinCategory = NSSegmentedControl(labels: ["短毛", "长毛", "趴趴猪"], trackingMode: .selectOne, target: nil, action: nil)
     private let skinContainer = FlippedView()
-    private let opacitySlider = NSSlider(value: 1, minValue: 0.2, maxValue: 1, target: nil, action: nil)
+    private let opacitySlider = NSSlider(value: 1, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let opacityValue = NSTextField(labelWithString: "100%")
-    private let sizeSlider = NSSlider(value: 0.58, minValue: 0.5, maxValue: 2, target: nil, action: nil)
+    private let sizeSlider = NSSlider(value: defaultPetScale, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let updateButton = NSButton(title: "更新到最新版本", target: nil, action: nil)
-    private let scaleValue = NSTextField(labelWithString: "58%")
+    private let scaleValue = NSTextField(labelWithString: "60%")
     private let labelsSwitch = NSButton(checkboxWithTitle: "显示按键气泡", target: nil, action: nil)
     private let clickThroughSwitch = NSButton(checkboxWithTitle: "鼠标穿透", target: nil, action: nil)
     private let loginSwitch = NSButton(checkboxWithTitle: "开机自启", target: nil, action: nil)
@@ -572,10 +572,12 @@ final class PetSettingsViewController: NSViewController {
     @objc private func installSkin() { onInstallSkin?() }
     @objc private func deleteSkin() { onDeleteSkin?() }
     @objc private func changeSize(_ sender: NSSlider) {
+        sender.doubleValue = (sender.doubleValue * 100).rounded() / 100
         scaleValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
         onScaleChange?(sender.doubleValue)
     }
     @objc private func changeOpacity(_ sender: NSSlider) {
+        sender.doubleValue = (sender.doubleValue * 100).rounded() / 100
         opacityValue.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
         onOpacityChange?(sender.doubleValue)
     }

@@ -19,6 +19,7 @@ namespace WheekKeys
         private const double SceneOffsetX = 9;
         private const double SettleTime = 285;
         private const double BubbleTime = 395;
+        private const double BubbleFontSize = 16, MinimumBubbleFontSize = 11;
         private const double BlinkDuration = 180;
         private const double ScrollDuration = 245;
         private const double HopDuration = 360;
@@ -226,7 +227,7 @@ namespace WheekKeys
 
         private void UpdateGaze()
         {
-            if (!followCursor) return;
+            if (!followCursor || !IsVisible) return;
             CursorPoint cursor;
             if (!GetCursorPos(out cursor) || PresentationSource.FromVisual(this) == null) return;
             LookAt(PointFromScreen(new Point(cursor.X, cursor.Y)));
@@ -676,10 +677,11 @@ namespace WheekKeys
                 dc.DrawRoundedRectangle(Brushes.IndianRed, null, new Rect(x, y, 4, 11), 2, 2);
                 dc.DrawEllipse(Brushes.IndianRed, null, new Point(x + 2, y + 16), 2.4, 2.4);
             }
-            if (showKeyLabels)
+            if (showKeyLabels && (left.Active || right.Active || RearPawsActive))
             {
-                if (drawnProne != null && drawnProne.Compact) DrawCompactBubbles(dc, now);
-                else { DrawBubble(dc, desk, left, now, false); DrawBubble(dc, desk, right, now, true); }
+                double viewScale = BubbleViewScale();
+                if (drawnProne != null && drawnProne.Compact) DrawCompactBubbles(dc, now, viewScale);
+                else { DrawBubble(dc, desk, left, now, false, viewScale); DrawBubble(dc, desk, right, now, true, viewScale); }
             }
             sleep.Draw(dc, new Point(bodyBounds.Right + 5, bodyBounds.Top + 32), now, true);
             dc.Pop();
@@ -834,10 +836,18 @@ namespace WheekKeys
             }
         }
 
-        private static void DrawBubble(DrawingContext dc, DeskSkin desk, Stroke stroke, double now, bool onRight)
+        private double BubbleViewScale()
+        {
+            PresentationSource source = PresentationSource.FromVisual(this);
+            if (source == null || ReferenceEquals(source.RootVisual, this)) return 1;
+            Rect bounds = TransformToAncestor(source.RootVisual).TransformBounds(new Rect(0, 0, SceneWidth, SceneHeight));
+            return Math.Max(0.001, bounds.Width / SceneWidth);
+        }
+
+        private static void DrawBubble(DrawingContext dc, DeskSkin desk, Stroke stroke, double now, bool onRight, double viewScale)
         {
             if (!stroke.Active) return;
-            string label = PixelKeyboardArt.Label(stroke.Scan);
+            string label = stroke.Scan == LocalPeers.AnonymousKeyScan ? "敲键" : PixelKeyboardArt.Label(stroke.Scan);
             if (String.IsNullOrEmpty(label)) return;
             double age = now - stroke.Started;
             if (age < 22 || age >= BubbleTime) return;
@@ -848,18 +858,34 @@ namespace WheekKeys
             if (!Labels.TryGetValue(cacheKey, out text))
             {
                 var face = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
-                text = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, 16, desk.PixelBubbleInk, 1.0);
+                text = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, face, BubbleFontSize, desk.PixelBubbleInk, 1.0);
                 Labels[cacheKey] = text;
             }
+            double zoom = Math.Max(1, Math.Min(2, MinimumBubbleFontSize / (BubbleFontSize * viewScale)));
+            double border = Math.Max(1, Math.Min(2.5, 1 / (viewScale * zoom)));
             double w = Math.Max(29, text.Width + 13);
             double x = onRight ? Math.Max(300, stroke.Target.X + 6) : Math.Min(90, stroke.Target.X - 6);
-            double y = 173 - 34 * t;
+            double margin = w * zoom / 2 + 3;
+            x = Math.Round(Math.Max(margin, Math.Min(SceneWidth - SceneOffsetX - margin, x)));
+            double y = Math.Round(173 - 34 * t);
             dc.PushOpacity(opacity);
-            x = Math.Round(x);
-            y = Math.Round(y);
-            dc.DrawRectangle(desk.PixelBubbleAccent, desk.PixelBubbleLine, new Rect(x - w / 2, y - 11, w, 24));
-            dc.DrawRectangle(desk.PixelBubblePaper, desk.PixelBubbleLine, new Rect(x - w / 2, y - 14, w, 24));
+            dc.PushTransform(new ScaleTransform(zoom, zoom, x, y));
+            DrawBubblePanel(dc, new Rect(x - w / 2, y - 11, w, 24), desk.PixelBubbleAccent, desk.PixelBubbleLine, border);
+            DrawBubblePanel(dc, new Rect(x - w / 2, y - 14, w, 24), desk.PixelBubblePaper, desk.PixelBubbleLine, border);
             dc.DrawText(text, new Point(x - text.Width / 2, y - 2 - text.Height / 2));
+            dc.Pop();
+            dc.Pop();
+        }
+
+        private static void DrawBubblePanel(DrawingContext dc, Rect bounds, Brush fill, Brush outline, double thickness)
+        {
+            Rect inside = bounds;
+            inside.Inflate(-thickness, -thickness);
+            dc.PushGuidelineSet(new GuidelineSet(
+                new[] { bounds.Left, inside.Left, inside.Right, bounds.Right },
+                new[] { bounds.Top, inside.Top, inside.Bottom, bounds.Bottom }));
+            dc.DrawRectangle(outline, null, bounds);
+            dc.DrawRectangle(fill, null, inside);
             dc.Pop();
         }
     }

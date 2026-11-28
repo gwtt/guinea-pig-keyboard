@@ -3,6 +3,8 @@ import AppKit
 final class PetView: NSView {
     private static let settleTime: TimeInterval = 0.285
     private static let bubbleTime: TimeInterval = 0.395
+    private static let bubbleFontSize: CGFloat = 16
+    private static let minimumBubbleFontSize: CGFloat = 11
     static let idleDelay: TimeInterval = 30
     struct DozeFrame {
         let duration: TimeInterval
@@ -91,6 +93,7 @@ final class PetView: NSView {
         var target: CGPoint
         var started: TimeInterval = 0
         var code: UInt16 = 0
+        var bubbleLabel = ""
         var active = false
         init(_ point: CGPoint) {
             rest = point
@@ -157,7 +160,7 @@ final class PetView: NSView {
         101: "F9", 109: "F10", 103: "F11", 111: "F12"
     ]
     private static let bubbleAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.boldSystemFont(ofSize: 16),
+        .font: NSFont.boldSystemFont(ofSize: bubbleFontSize),
         .foregroundColor: NSColor(calibratedRed: 78/255, green: 53/255, blue: 30/255, alpha: 1)
     ]
     private let left = Stroke(CGPoint(x: 172, y: 215))
@@ -304,9 +307,9 @@ final class PetView: NSView {
         rearRight.rest = CGPoint(x: 233, y: 210)
         needsDisplay = true
     }
-    func pressAnonymousKey() { pressKey(UInt16.max) }
+    func pressAnonymousKey(showBubble: Bool = false) { pressKey(UInt16.max, bubbleLabel: showBubble ? "敲键" : nil) }
 
-    func pressKey(_ keyCode: UInt16) {
+    func pressKey(_ keyCode: UInt16, bubbleLabel: String? = nil) {
         let key = keyInfo(keyCode)
         let hand: Stroke = skin.usesDrawnArt ? (key.center.x >= 223 ? (key.center.y < 244 ? rearRight : rearLeft) : right) : (key.right ? left : right)
         let now = ProcessInfo.processInfo.systemUptime
@@ -325,6 +328,7 @@ final class PetView: NSView {
         hand.target = key.center
         hand.started = when
         hand.code = keyCode
+        hand.bubbleLabel = bubbleLabel ?? (keyCode == 49 ? "Space" : key.label)
         hand.active = true
         wake(now)
     }
@@ -643,9 +647,9 @@ final class PetView: NSView {
         ctx.restoreGState()
         drawDeskAndPaws(pose, l: l, r: r, mouseFrame: mouseFrame, offset: motion, angle: pop.angle, ctx)
         if showKeyLabels {
-            drawBubble(left, now, false, bodyRect, ctx)
-            drawBubble(right, now, true, bodyRect, ctx)
-            if skin.usesDrawnArt { drawBubble(rearLeft, now, true, bodyRect, ctx); drawBubble(rearRight, now, true, bodyRect, ctx) }
+            drawBubble(left, now, false, bodyRect, scale, ctx)
+            drawBubble(right, now, true, bodyRect, scale, ctx)
+            if skin.usesDrawnArt { drawBubble(rearLeft, now, true, bodyRect, scale, ctx); drawBubble(rearRight, now, true, bodyRect, scale, ctx) }
         }
         if now - celebrationStarted < 1.6 {
             let text = celebrationText as NSString
@@ -745,25 +749,28 @@ final class PetView: NSView {
                               width: width, height: height), ctx)
         ctx.restoreGState()
     }
-    private func drawBubble(_ hand: Stroke, _ now: TimeInterval, _ onRight: Bool, _ bodyRect: CGRect, _ ctx: CGContext) {
+    private func drawBubble(_ hand: Stroke, _ now: TimeInterval, _ onRight: Bool, _ bodyRect: CGRect, _ scale: CGFloat, _ ctx: CGContext) {
         guard hand.active else { return }
-        let label = hand.code == 49 ? "Space" : keyInfo(hand.code).label
+        let label = hand.bubbleLabel
         let age = now - hand.started
         guard !label.isEmpty, age >= 0.022, age < Self.bubbleTime else { return }
         let t = (age - 0.022) / (Self.bubbleTime - 0.022), opacity = min(1, min(t * 9, (1 - t) * 3.8))
+        let zoom = max(1, min(2, Self.minimumBubbleFontSize / (Self.bubbleFontSize * scale)))
         let attrs = Self.bubbleAttributes
         let text = label as NSString, size = text.size(withAttributes: attrs), width = max(29, size.width + 13)
-        let x = onRight ? max(300, hand.target.x + 6) : min(90, hand.target.x - 6)
+        let margin = (width / 2 + 4) * zoom
+        let x = min(391 - margin, max(margin, onRight ? max(300, hand.target.x + 6) : min(90, hand.target.x - 6)))
         var y = 173 - 34 * t
-        if x + width / 2 > bodyRect.minX - 5 && x - width / 2 < bodyRect.maxX + 5 {
-            y = min(y, bodyRect.minY - 18)
+        if x + margin > bodyRect.minX - 5 && x - margin < bodyRect.maxX + 5 {
+            y = max(20 * zoom, min(y, bodyRect.minY - 18 * zoom))
         }
         ctx.saveGState()
         ctx.setAlpha(opacity)
         ctx.translateBy(x: x, y: y)
+        ctx.scaleBy(x: zoom, y: zoom)
         ctx.rotate(by: (onRight ? 7 : -7) * .pi / 180)
         ctx.setStrokeColor(NSColor(calibratedRed: 78/255, green: 53/255, blue: 30/255, alpha: 1).cgColor)
-        ctx.setLineWidth(1.55)
+        ctx.setLineWidth(max(1.55, min(2.5, 1 / (scale * zoom))))
         for (offset, color) in [(CGFloat(-11), NSColor(calibratedRed: 229/255, green: 188/255, blue: 97/255, alpha: 1)), (CGFloat(-14), NSColor(calibratedRed: 1, green: 243/255, blue: 216/255, alpha: 1))] {
             ctx.setFillColor(color.cgColor)
             ctx.addPath(CGPath(roundedRect: CGRect(x: -width/2, y: offset, width: width, height: 24), cornerWidth: 5, cornerHeight: 5, transform: nil))

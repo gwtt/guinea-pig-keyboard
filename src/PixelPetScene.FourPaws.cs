@@ -107,7 +107,7 @@ namespace WheekKeys
             }
         }
 
-        private void DrawCompactBubbles(DrawingContext dc, double now)
+        private void DrawCompactBubbles(DrawingContext dc, double now, double viewScale)
         {
             Stroke first = null, second = null;
             foreach (Stroke paw in compactPaws)
@@ -117,8 +117,8 @@ namespace WheekKeys
                 { if (second == null || paw.Started > second.Started) second = paw; }
                 else if (first == null || paw.Started > first.Started) first = paw;
             }
-            if (first != null) DrawBubble(dc, desk, first, now, false);
-            if (second != null) DrawBubble(dc, desk, second, now, true);
+            if (first != null) DrawBubble(dc, desk, first, now, false, viewScale);
+            if (second != null) DrawBubble(dc, desk, second, now, true, viewScale);
         }
     }
 }

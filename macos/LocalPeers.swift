@@ -3,8 +3,11 @@ import Foundation
 final class LocalPeers {
     enum Action: Equatable {
         case key(UInt16)
+        case anonymousKey
         case click(Bool)
     }
+
+    private static let anonymousKeyScan: UInt64 = 511
 
     struct Peer {
         var skin: String
@@ -76,8 +79,7 @@ final class LocalPeers {
     private var actionSequence: UInt64 = 0
     private var pendingActions: [(token: String, time: TimeInterval)] = []
 
-    // The reserved WA1 token replays an unlabeled tap even on older peers.
-    func recordTyping() { recordAction("k511") }
+    func recordTyping() { recordAction("k\(Self.anonymousKeyScan)") }
 
     func recordClick(right: Bool) { recordAction(right ? "r" : "l") }
 
@@ -310,8 +312,8 @@ final class LocalPeers {
             if token == "l" || token == "r" {
                 actions.append(.click(token == "r"))
             } else {
-                guard token.first == "k", let scan = count(token.dropFirst()), (1...511).contains(scan) else { return nil }
-                actions.append(.key(NetworkKeyCodes.keyCode(for: UInt16(scan)) ?? UInt16.max))
+                guard token.first == "k", let scan = count(token.dropFirst()), (1...anonymousKeyScan).contains(scan) else { return nil }
+                actions.append(scan == anonymousKeyScan ? .anonymousKey : .key(NetworkKeyCodes.keyCode(for: UInt16(scan)) ?? UInt16.max))
             }
         }
         return actions

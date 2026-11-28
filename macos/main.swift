@@ -2,8 +2,11 @@ import AppKit
 import ApplicationServices
 import ServiceManagement
 
-func initialPetScale(_ savedScale: Double) -> Double {
-    savedScale > 0 ? min(2.0, max(0.5, savedScale)) : 0.58
+let defaultPetScale = 0.6
+
+func initialPetScale(_ savedScale: Double?) -> Double {
+    guard let savedScale, savedScale.isFinite, savedScale >= 0 else { return defaultPetScale }
+    return min(1, savedScale)
 }
 
 private enum LoginAtStartup {
@@ -72,7 +75,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     private var eventSource: CFRunLoopSource?
     private var skinID = PetSkin.all[0].id
     private var nickname = ""
-    private var scale = 0.58
+    private var scale = defaultPetScale
     private var clickThrough = false
     private var showLabels = true
     private let anonymousInput = AnonymousKeyboardInput()
@@ -94,19 +97,19 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         NSApp.setActivationPolicy(.accessory)
         checkForUpdate()
         WheekPackLoader.loadInstalled(directory: packDirectory)
-        opacity = defaults.object(forKey: "opacity") == nil ? 1 : min(1, max(0.2, defaults.double(forKey: "opacity")))
+        opacity = min(1, max(0, defaults.object(forKey: "opacity") as? Double ?? 1))
         deskSkin = defaults.string(forKey: "deskSkin") ?? "meadow"
         if !["meadow", "peach", "mocha"].contains(deskSkin) { deskSkin = "meadow" }
         skinID = PetSkin.named(defaults.string(forKey: "skin")).id
         nickname = LocalPeers.normalizedNickname(defaults.string(forKey: "nickname") ?? "") ?? ""
-        let savedScale = defaults.double(forKey: "scale")
-        scale = initialPetScale(savedScale)
+        scale = initialPetScale(defaults.object(forKey: "scale") as? Double)
         clickThrough = defaults.bool(forKey: "clickThrough")
         showLabels = defaults.object(forKey: "showKeyLabels") as? Bool ?? true
         keyCount = min(UInt64(Int64.max), UInt64(defaults.string(forKey: "keyCount") ?? "0") ?? 0)
         clickCount = min(UInt64(Int64.max), UInt64(defaults.string(forKey: "clickCount") ?? "0") ?? 0)
 
-        let size = NSSize(width: baseSize.width * scale, height: baseSize.height * scale)
+        let windowScale = scale > 0 ? scale : defaultPetScale
+        let size = NSSize(width: baseSize.width * windowScale, height: baseSize.height * windowScale)
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         var origin = NSPoint(x: visible.maxX - size.width - 20, y: visible.minY + 20)
         if defaults.object(forKey: "windowX") != nil, defaults.object(forKey: "windowY") != nil {
@@ -117,12 +120,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
-        window.alphaValue = opacity
         window.hidesOnDeactivate = false
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.isMovableByWindowBackground = true
-        window.ignoresMouseEvents = clickThrough
+        updateWindowAppearance()
         window.delegate = self
         pet = PetView(frame: NSRect(origin: .zero, size: size))
         pet.autoresizingMask = [.width, .height]
@@ -251,17 +253,24 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         peers.refreshState()
         refreshSettings()
     }
-    @objc private func enlarge() { resize(to: min(2.0, scale + 0.1)) }
-    @objc private func shrink() { resize(to: max(0.5, scale - 0.1)) }
+    @objc private func enlarge() { resize(to: scale + 0.1) }
+    @objc private func shrink() { resize(to: scale - 0.1) }
     private func resize(to value: Double) {
-        let oldFrame = window.frame
-        scale = value
+        scale = min(1, max(0, value))
         defaults.set(scale, forKey: "scale")
-        let size = NSSize(width: baseSize.width * scale, height: baseSize.height * scale)
-        window.setFrame(NSRect(x: oldFrame.maxX - size.width, y: oldFrame.minY, width: size.width, height: size.height), display: true)
-        savePosition()
+        if scale > 0 {
+            let oldFrame = window.frame
+            let size = NSSize(width: baseSize.width * scale, height: baseSize.height * scale)
+            window.setFrame(NSRect(x: oldFrame.maxX - size.width, y: oldFrame.minY, width: size.width, height: size.height), display: true)
+            savePosition()
+        }
+        updateWindowAppearance()
         updateFriends()
         refreshSettings()
+    }
+    private func updateWindowAppearance() {
+        window.alphaValue = scale == 0 ? 0 : opacity
+        window.ignoresMouseEvents = clickThrough || window.alphaValue == 0
     }
     @objc private func toggleLabels() {
         showLabels.toggle()
@@ -272,7 +281,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     }
     @objc private func toggleClickThrough() {
         clickThrough.toggle()
-        window.ignoresMouseEvents = clickThrough
+        updateWindowAppearance()
         defaults.set(clickThrough, forKey: "clickThrough")
         updateFriends()
         refreshSettings()
@@ -290,8 +299,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             created.onOpacityChange = { [weak self] value in
                 guard let self else { return }
                 self.opacity = value
-                self.window.alphaValue = value
                 self.defaults.set(value, forKey: "opacity")
+                self.updateWindowAppearance()
                 self.updateFriends()
             }
             created.onDeskSkinChange = { [weak self] value in
@@ -426,7 +435,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     private func updateFriends() {
         guard let window = window else { return }
         friends.update(owner: window, members: peers.peers, clickThrough: clickThrough, showLabels: showLabels) {
-            peers.takeAction(for: $0, visible: window.isVisible)
+            peers.takeAction(for: $0, visible: window.isVisible && window.alphaValue > 0)
         }
     }
     @objc private func toggleVisible() {

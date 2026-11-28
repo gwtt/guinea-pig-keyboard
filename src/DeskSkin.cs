@@ -41,7 +41,7 @@ namespace WheekKeys
         public readonly Brush PixelBubbleAccent;
         public readonly Color PixelBubbleInkColor;
         public readonly Brush PixelBubbleInk;
-        public readonly Pen PixelBubbleLine;
+        public readonly Brush PixelBubbleLine;
         public readonly Brush MouseClickGlow;
 
         private DeskSkin(
@@ -63,7 +63,7 @@ namespace WheekKeys
             PixelBubbleAccent = FreezeBrush(pxAccent);
             PixelBubbleInkColor = pxInk;
             PixelBubbleInk = FreezeBrush(pxInk);
-            PixelBubbleLine = FreezePen(FreezeBrush(id == "mocha" ? Rgb(33, 23, 20) : pxInk), 1.0);
+            PixelBubbleLine = FreezeBrush(id == "mocha" ? Rgb(33, 23, 20) : pxInk);
             MouseClickGlow = FreezeBrush(mouseGlow);
         }
 

@@ -52,7 +52,8 @@ namespace WheekKeys
 
     internal sealed class PetWindow : Window
     {
-        private const double MinimumPetWidth = 180;
+        private const double FullPetWidth = 310;
+        private const double DefaultSizePercent = 60;
         private const int GwlExStyle = -20;
         private const int WsExTransparent = 0x20;
         private const int WsExToolWindow = 0x80;
@@ -68,6 +69,7 @@ namespace WheekKeys
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WheekKeys");
 
         private readonly PixelPetScene scene;
+        private readonly Viewbox viewport;
         private readonly Forms.NotifyIcon tray;
         private readonly string settingsPath;
         private readonly LocalPeers peers = new LocalPeers();
@@ -84,6 +86,7 @@ namespace WheekKeys
         private double nextSave;
         private DesktopInput input;
         private PenInput penInput;
+        private double petWidth = FullPetWidth * DefaultSizePercent / 100;
         private bool clickThrough, altHeld;
         private bool ready;
         private PetSettings settingsWindow;
@@ -92,7 +95,7 @@ namespace WheekKeys
         public PetWindow()
         {
             Title = "豚鼠键盘";
-            Width = MinimumPetWidth;
+            Width = petWidth;
             Height = Width * 308.0 / 400.0;
             WindowStyle = WindowStyle.None;
             AllowsTransparency = true;
@@ -104,19 +107,15 @@ namespace WheekKeys
             WindowStartupLocation = WindowStartupLocation.Manual;
             scene = new PixelPetScene();
             scene.ShowKeyLabels = true;
-            Viewbox view = new Viewbox();
-            view.Width = double.NaN;
-            view.Height = double.NaN;
-            view.Stretch = Stretch.Uniform;
-            view.Child = scene;
-            Grid panel = new Grid { Children = { view } };
+            viewport = new Viewbox { Width = Width, Height = Height, Stretch = Stretch.Uniform, Child = scene };
+            Grid panel = new Grid { Children = { viewport } };
             overlay = new PetWindowOverlay(panel, scene);
             Content = panel;
             WheekPackLoader.EnableDrop(this, ImportSkin);
             settingsPath = Path.Combine(DataDirectory, "settings.txt");
             placement = new WindowPlacement(this, delegate { SaveSettings(); }, delegate { InteractLocally(); return true; });
             RestoreSettings();
-            friends = new FriendDesktop(this, view);
+            friends = new FriendDesktop(this, viewport);
             tray = new Forms.NotifyIcon();
             tray.Text = "豚鼠键盘";
             try { ownedIcon = Drawing.Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location); }
@@ -309,7 +308,7 @@ namespace WheekKeys
         internal DeskSkin ActiveDeskSkin { get { return scene.Desk; } }
         internal bool LabelsVisible { get { return scene.ShowKeyLabels; } }
         internal bool MouseClickThrough { get { return clickThrough; } }
-        internal double PetWidth { get { return Width; } }
+        internal double SizePercent { get { return petWidth * 100 / FullPetWidth; } }
         internal LocalPeers Network { get { return peers; } }
         internal long KeyCount { get { return keyCount; } }
         internal long ClickCount { get { return clickCount; } }
@@ -373,7 +372,7 @@ namespace WheekKeys
 
         internal void SetOpacityPercent(double percent)
         {
-            Opacity = Math.Max(20, Math.Min(100, percent)) / 100;
+            Opacity = Math.Max(0, Math.Min(100, percent)) / 100;
             settingsDirty = true;
         }
 
@@ -428,11 +427,24 @@ namespace WheekKeys
             SaveSettings();
         }
 
-        internal void SetWidth(double width)
+        internal void SetSizePercent(double percent) { SetWidth(FullPetWidth * percent / 100); }
+
+        private void SetWidth(double width)
         {
-            width = Math.Max(MinimumPetWidth, Math.Min(600, width));
-            placement.Resize(width, width * 308.0 / 400.0);
+            ApplySize(width);
             settingsDirty = true;
+        }
+
+        private void ApplySize(double width)
+        {
+            petWidth = Math.Max(0, Math.Min(FullPetWidth, width));
+            if (petWidth > 0)
+            {
+                viewport.Width = petWidth;
+                viewport.Height = petWidth * 308.0 / 400.0;
+                placement.Resize(viewport.Width, viewport.Height);
+            }
+            ((UIElement)Content).Visibility = petWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private sealed class MenuAction
@@ -445,8 +457,8 @@ namespace WheekKeys
         private MenuAction[] MenuActions()
         {
             return new MenuAction[] {
-                new MenuAction("放大", delegate { SetWidth(Width + 40); }),
-                new MenuAction("缩小", delegate { SetWidth(Width - 40); }),
+                new MenuAction("放大", delegate { SetWidth(petWidth + 40); }),
+                new MenuAction("缩小", delegate { SetWidth(petWidth - 40); }),
                 new MenuAction(scene.ShowKeyLabels ? "隐藏按键气泡" : "显示按键气泡", delegate { SetLabels(!scene.ShowKeyLabels); }),
                 new MenuAction(clickThrough ? "关闭鼠标穿透" : "开启鼠标穿透（可从托盘关闭）", delegate { SetClickThrough(!clickThrough); }),
                 new MenuAction("退出", Close)
@@ -522,8 +534,7 @@ namespace WheekKeys
                     !bool.TryParse(values[3], out labels) || !bool.TryParse(values[4], out through) ||
                     double.IsNaN(left) || double.IsInfinity(left) || double.IsNaN(top) || double.IsInfinity(top) ||
                     double.IsNaN(width) || double.IsInfinity(width)) return;
-                Width = Math.Max(MinimumPetWidth, Math.Min(600, width));
-                Height = Width * 308.0 / 400.0;
+                ApplySize(width);
                 Left = left;
                 Top = top;
                 scene.ShowKeyLabels = labels;
@@ -538,7 +549,7 @@ namespace WheekKeys
                 if (values.Length > 10 && bool.TryParse(values[10], out docked)) placement.IsDockedToTaskbar = docked;
                 if (values.Length > 11) scene.Desk = DeskSkin.FromId(values[11]);
                 int percent;
-                if (values.Length > 13 && int.TryParse(values[13], out percent) && percent >= 20 && percent <= 100)
+                if (values.Length > 13 && int.TryParse(values[13], out percent) && percent >= 0 && percent <= 100)
                     Opacity = percent / 100.0;
             }
             catch { PlaceAtDefaultPosition(); }
@@ -553,7 +564,7 @@ namespace WheekKeys
                 string pending = settingsPath + ".tmp";
                 File.WriteAllLines(pending, new string[] {
                     Left.ToString("R", CultureInfo.InvariantCulture), Top.ToString("R", CultureInfo.InvariantCulture),
-                    Width.ToString("R", CultureInfo.InvariantCulture), scene.ShowKeyLabels.ToString(), clickThrough.ToString(), scene.Skin.Id,
+                    petWidth.ToString("R", CultureInfo.InvariantCulture), scene.ShowKeyLabels.ToString(), clickThrough.ToString(), scene.Skin.Id,
                     // Preserve the old setting's slot so the following fields keep their positions.
                     bool.FalseString, keyCount.ToString(CultureInfo.InvariantCulture), clickCount.ToString(CultureInfo.InvariantCulture), nickname,
                     placement.IsDockedToTaskbar.ToString(), scene.Desk.Id, bool.FalseString,

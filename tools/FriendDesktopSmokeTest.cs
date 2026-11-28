@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -18,6 +19,57 @@ internal static class FriendDesktopSmokeTest
     private static void Check(bool ok, string label) { if (!ok) throw new Exception(label); }
     private static void Pump(Window owner) { owner.UpdateLayout(); DispatcherFrame frame = new DispatcherFrame(); Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(delegate { frame.Continue = false; })); Dispatcher.PushFrame(frame); }
     private static object First(IDictionary items) { foreach (DictionaryEntry item in items) return item.Value; return null; }
+
+    private static bool HasText(Drawing drawing)
+    {
+        if (drawing is GlyphRunDrawing) return true;
+        var group = drawing as DrawingGroup;
+        if (group == null) return false;
+        foreach (Drawing child in group.Children)
+            if (HasText(child)) return true;
+        return false;
+    }
+
+    private static DrawingGroup DrawScene(FrameworkElement scene, object stroke)
+    {
+        var clock = (Stopwatch)Field(scene, "clock");
+        stroke.GetType().GetField("Started").SetValue(stroke, clock.Elapsed.TotalMilliseconds - 100);
+        var drawing = new DrawingGroup();
+        using (DrawingContext dc = drawing.Open()) scene.GetType().GetMethod("OnRender", Private).Invoke(scene, new object[] { dc });
+        return drawing;
+    }
+
+    private static void CheckBubbleEdges(Drawing drawing, int width, object desk)
+    {
+        double scale = width / 400.0;
+        int height = (int)Math.Ceiling(308 * scale);
+        var visual = new DrawingVisual();
+        RenderOptions.SetEdgeMode(visual, EdgeMode.Aliased);
+        using (DrawingContext dc = visual.RenderOpen())
+        {
+            dc.PushTransform(new ScaleTransform(scale, scale));
+            dc.DrawDrawing(drawing);
+            dc.Pop();
+        }
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        var pixels = new int[width * height];
+        bitmap.CopyPixels(pixels, width * 4, 0);
+        var paper = ((SolidColorBrush)desk.GetType().GetField("PixelBubblePaper").GetValue(desk)).Color;
+        var outline = ((SolidColorBrush)desk.GetType().GetField("PixelBubbleLine").GetValue(desk)).Color;
+        int paperPixel = paper.A << 24 | paper.R << 16 | paper.G << 8 | paper.B;
+        int outlinePixel = outline.A << 24 | outline.R << 16 | outline.G << 8 | outline.B;
+        int outlinedRows = 0;
+        for (int y = (int)(125 * scale); y < (int)(185 * scale); y++)
+        {
+            int row = y * width;
+            int left = Array.IndexOf(pixels, paperPixel, row + 1, width - 2);
+            if (left < 0) continue;
+            int right = Array.LastIndexOf(pixels, paperPixel, row + width - 2, width - 2);
+            if (right - left >= 18 && pixels[left - 1] == outlinePixel && pixels[right + 1] == outlinePixel) outlinedRows++;
+        }
+        Check(outlinedRows >= 5, "50 percent bubble has opaque left and right edges and room for text");
+    }
 
     private static Rect CheckNameAboveHead(Window window, FrameworkElement scene, TextBlock label)
     {
@@ -83,18 +135,42 @@ internal static class FriendDesktopSmokeTest
             Check((int)left.GetType().GetField("Scan").GetValue(left)==30 || (int)right.GetType().GetField("Scan").GetValue(right)==30,"network action reaches rendered hand");
             Check(!(bool)Get(remote,"ShowKeyLabels"),"bubble toggle propagated");
             Check(label.Visibility==Visibility.Visible && label.Text=="像素黄白","desktop label is just the friend name");
-            read.Invoke(network,new object[]{"WS1|"+id+"|pixel-tricolor|0",1.2});
-            Call(stage,"Update",network,1.2,true,false);
+            read.Invoke(network, new object[] { "WA1|" + id + "|2|k511", 1.3 });
+            Call(stage, "Update", network, 1.3, true, true);
+            object anonymousStroke = (int)left.GetType().GetField("Scan").GetValue(left) == 511 ? left : right;
+            Check((int)anonymousStroke.GetType().GetField("Scan").GetValue(anonymousStroke) == 511, "anonymous key reaches rendered hand");
+            owner.Width = 155; owner.Height = 155 * 308.0 / 400;
+            Pump(owner); Call(stage, "Update", network, 1.3, true, true); Pump(owner);
+            var bubbleDrawing = DrawScene(remote, anonymousStroke);
+            Check(HasText(bubbleDrawing), "anonymous friend key renders bubble text");
+            CheckBubbleEdges(bubbleDrawing, 155, Get(remote, "Desk"));
+            Call(stage, "Update", network, 1.3, true, false);
+            Check(!HasText(DrawScene(remote, anonymousStroke)), "disabled bubbles suppress anonymous text");
+            read.Invoke(network,new object[]{"WS1|"+id+"|pixel-tricolor|0",1.3});
+            Call(stage,"Update",network,1.3,true,false);
             Check(label.Text=="像素黄白 · 已暂停动作","paused sharing status remains visible");
             IntPtr handle=((HwndSource)PresentationSource.FromVisual(friend)).Handle;
             Check((GetWindowLong(handle,-20)&0x20)!=0,"click-through follows owner");
             owner.Hide(); Pump(owner); Check(!friend.IsVisible,"peer hides with owner");
             owner.Show(); Pump(owner); Check(friend.IsVisible,"peer returns with owner");
+            viewport.Visibility = Visibility.Collapsed;
+            Call(stage, "Update", network, 1.3, false, true); Pump(owner);
+            Check(!friend.IsVisible, "zero size hides the friend window");
+            viewport.Visibility = Visibility.Visible;
+            Pump(owner); Call(stage, "Update", network, 1.3, false, true); Pump(owner);
+            Check(friend.IsVisible && viewport.ActualWidth > 0 && viewport.ActualHeight > 0, "positive size restores both viewports");
+            viewport.Width = 3.1;
+            viewport.Height = 3.1 * 308 / 400;
+            owner.Width = viewport.Width;
+            owner.Height = viewport.Height;
+            Pump(owner); Call(stage, "Update", network, 1.3, false, true); Pump(owner);
+            Rect tinyFriend = remote.TransformToAncestor(remoteView).TransformBounds(new Rect(0, 0, 400, 308));
+            Check(Math.Abs(viewport.ActualWidth - 3.1) < 0.01 && Math.Abs(tinyFriend.Width - 3.1) < 0.01, "one percent renders independent of the native window minimum");
             friend.Close(); Call(stage,"Update",network,1.3,false,true); Pump(owner);
             wrapper=First(windows); friend=(Window)Field(wrapper,"window"); Check(friend.IsVisible,"closed peer recreated without exception"); friend.Opacity=0;
             ((IDisposable)network).Dispose(); Call(stage,"Update",network,1.4,false,true); Pump(owner); Check(windows.Count==0,"leave closes peer window");
             ((IDisposable)stage).Dispose(); owner.Close();
-            Console.WriteLine("PASS: equal rendered scale at 180/310/600, names above animated heads, real WPF key animation, click-through, hide/show, recreate, leave cleanup");
+            Console.WriteLine("PASS: friend scale and zero-size recovery, name positioning, anonymous key bubbles, click-through, hide/show, recreate, leave cleanup");
             return 0;
         }
         catch(Exception e) { Console.Error.WriteLine(e); return 1; }

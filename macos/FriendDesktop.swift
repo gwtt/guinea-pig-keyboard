@@ -71,10 +71,10 @@ final class FriendDesktop {
             if !peer.supportsActivity { label += " · 仅外观" }
             else if !peer.sharingActivity { label += " · 已暂停动作" }
             if friend.name.stringValue != label { friend.name.stringValue = label }
-            friend.window.ignoresMouseEvents = clickThrough
+            friend.window.ignoresMouseEvents = clickThrough || owner.alphaValue == 0
             friend.window.alphaValue = owner.alphaValue
             friend.layout(at: frame)
-            let labelWidth = min(frame.width - 12, friend.name.intrinsicContentSize.width + 14)
+            let labelWidth = min(max(0, frame.width - 12), friend.name.intrinsicContentSize.width + 14)
             friend.name.frame = NSRect(x: (frame.width - labelWidth) / 2, y: 6, width: labelWidth, height: 18)
             let action = takeAction(id)
             guard owner.isVisible else {
@@ -85,6 +85,7 @@ final class FriendDesktop {
             if let action = action {
                 switch action {
                 case .key(let code): friend.pet.pressKey(code)
+                case .anonymousKey: friend.pet.pressAnonymousKey(showBubble: true)
                 case .click(let right): friend.pet.clickMouse(right: right)
                 }
             }

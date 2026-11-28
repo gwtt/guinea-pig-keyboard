@@ -29,14 +29,14 @@ internal static class PixelSkinSmokeTest
         Window settings = null;
         try
         {
-            Check(((Window)owner).Width == 180, "fresh profile starts at 58 percent");
+            Check(((Window)owner).Width == 186 && ((Window)owner).Opacity == 1, "fresh profile starts at 60 percent size and 100 percent opacity");
             Directory.CreateDirectory(profileDirectory);
             File.WriteAllLines(profile, new[] { "111", "222", "330", "False", "True", "gold-white", "True", "12345", "6789", "测试豚鼠" });
             MethodInfo restore = windowType.GetMethod("RestoreSettings", BindingFlags.Instance | BindingFlags.NonPublic);
             restore.Invoke(owner, null);
             Check(Convert.ToDouble(windowType.GetProperty("Left").GetValue(owner, null)) == 111, "left");
             Check(Convert.ToDouble(windowType.GetProperty("Top").GetValue(owner, null)) == 222, "top");
-            Check(Convert.ToDouble(windowType.GetProperty("PetWidth", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(owner, null)) == 330, "width");
+            Check(((Window)owner).Width == 310, "legacy size is capped at 100 percent");
             Check(!(bool)windowType.GetProperty("LabelsVisible", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(owner, null), "labels");
             Check((bool)windowType.GetProperty("MouseClickThrough", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(owner, null), "through");
             Check(Convert.ToInt64(windowType.GetProperty("KeyCount", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(owner, null)) == 12345, "key count");
@@ -65,7 +65,7 @@ internal static class PixelSkinSmokeTest
                 Check(label.Length > 0 && !label.StartsWith("像素") && System.Windows.Automation.AutomationProperties.GetName(button) == label, "coat label " + activeId);
                 string[] lines = File.ReadAllLines(profile);
                 Check(lines.Length >= 10 && lines[5] == activeId, "saved skin " + entry.Key);
-                Check(lines[0] == "111" && lines[1] == "222" && lines[2] == "330" && lines[3] == "False" && lines[4] == "True" && lines[6] == "False" && lines[7] == "12345" && lines[8] == "6789" && lines[9] == "测试豚鼠", "preserved profile " + entry.Key);
+                Check(lines[0] == "111" && lines[1] == "222" && lines[2] == "310" && lines[3] == "False" && lines[4] == "True" && lines[6] == "False" && lines[7] == "12345" && lines[8] == "6789" && lines[9] == "测试豚鼠", "preserved profile " + entry.Key);
             }
             IDictionary desks = (IDictionary)Field(settings, "deskSkinButtons");
             Check(desks.Count == 3, "three pixel desk skins");
@@ -182,15 +182,27 @@ internal static class PixelSkinSmokeTest
         var sliders = LogicalElements(settings).OfType<Slider>().ToArray();
         Slider size = sliders.Single(slider => System.Windows.Automation.AutomationProperties.GetAutomationId(slider) == "pet-size");
         Slider opacity = sliders.Single(slider => System.Windows.Automation.AutomationProperties.GetAutomationId(slider) == "pet-opacity");
-        size.Value = 317;
-        Check(((Window)owner).Width == 317, "continuous size selection");
-        size.Value = 330;
+        Check(size.Minimum == 0 && size.Maximum == 100 && opacity.Minimum == 0 && opacity.Maximum == 100, "both display sliders span zero to 100 percent");
+        size.Value = 42;
+        Check(((Window)owner).Width == 130.2, "size slider applies a percentage of the base width");
         opacity.Value = 64;
         Check(((Window)owner).Opacity == 0.64, "opacity preview");
-        owner.GetType().GetMethod("SaveSettings", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(owner, null);
+        MethodInfo save = owner.GetType().GetMethod("SaveSettings", BindingFlags.Instance | BindingFlags.NonPublic);
+        save.Invoke(owner, null);
         var profile = File.ReadAllLines((string)Field(owner, "settingsPath"));
         Check(profile[13] == "64", "appearance preferences are persisted");
+        size.Value = 0;
+        opacity.Value = 0;
+        var view = (UIElement)((Window)owner).Content;
+        Check(view.Visibility == Visibility.Collapsed, "zero size hides the pet and its overlays");
+        save.Invoke(owner, null);
+        owner.GetType().GetMethod("SetSizePercent", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(owner, new object[] { 60.0 });
+        ((Window)owner).Opacity = 1;
+        owner.GetType().GetMethod("RestoreSettings", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(owner, null);
+        Check(view.Visibility == Visibility.Collapsed && ((Window)owner).Opacity == 0, "zero size and opacity survive saving and loading");
+        size.Value = 100;
         opacity.Value = 100;
+        Check(((Window)owner).Width == 310 && ((Window)owner).Opacity == 1 && view.Visibility == Visibility.Visible, "both appearance sliders recover from zero");
         var grid = (UniformGrid)Field(settings, "skinGrid");
         var groupButtons = (IDictionary)Field(settings, "groupButtons");
         foreach (string group in new[] { "短毛", "长毛", "趴趴猪" })

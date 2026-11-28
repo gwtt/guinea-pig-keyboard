@@ -24,7 +24,7 @@ namespace WheekKeys
             if (owner == null) throw new ArgumentNullException("owner");
             this.owner = owner;
             this.viewport = viewport;
-            owner.IsVisibleChanged += OwnerVisibilityChanged;
+            (viewport ?? owner).IsVisibleChanged += OwnerVisibilityChanged;
         }
 
         public void Update(LocalPeers network, double now, bool clickThrough, bool showLabels)
@@ -38,6 +38,7 @@ namespace WheekKeys
             foreach (string id in windows.Keys.Where(x => network == null || !network.Members.ContainsKey(x)).ToArray())
             { windows[id].Close(); windows.Remove(id); }
             if (network == null) return;
+            bool visible = OwnerDisplaysPets;
             foreach (var pair in network.Members)
             {
                 FriendWindow view;
@@ -51,8 +52,8 @@ namespace WheekKeys
                         delegate(string kind, double when) { return network.TrySendInteraction(id, kind, when); }));
                 }
                 view.SetPointerMode(clickThrough, altBypass);
-                view.Update(pair.Value, now, showLabels);
-                view.SetOwnerVisible(owner.IsVisible);
+                view.Update(pair.Value, now, showLabels, visible);
+                view.SetOwnerVisible(visible);
             }
         }
 
@@ -67,14 +68,16 @@ namespace WheekKeys
             if (windows.TryGetValue(peerId, out view) && !view.IsClosed) view.ShowInteraction(kind);
         }
 
+        private bool OwnerDisplaysPets { get { return (viewport ?? owner).IsVisible; } }
+
         private void OwnerVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
-        { foreach (FriendWindow view in windows.Values) view.SetOwnerVisible(owner.IsVisible); }
+        { foreach (FriendWindow view in windows.Values) view.SetOwnerVisible(OwnerDisplaysPets); }
 
         public void Dispose()
         {
             if (disposed) return;
             disposed = true;
-            owner.IsVisibleChanged -= OwnerVisibilityChanged;
+            (viewport ?? owner).IsVisibleChanged -= OwnerVisibilityChanged;
             foreach (FriendWindow view in windows.Values) view.Close();
             windows.Clear();
         }
@@ -194,14 +197,14 @@ namespace WheekKeys
                 ApplyStyles();
             }
 
-            public void Update(LocalPeers.Peer peer, double now, bool showLabels)
+            public void Update(LocalPeers.Peer peer, double now, bool showLabels, bool visible)
             {
                 this.now = now;
                 scene.Skin = peer.Skin;
                 if (scene.ShowKeyLabels != showLabels) scene.ShowKeyLabels = showLabels;
                 MatchSize();
                 LocalPeers.PeerAction action;
-                if (!window.Owner.IsVisible) peer.ClearActions();
+                if (!visible) peer.ClearActions();
                 else if (peer.TryTakeAction(now, out action))
                 {
                     if (action.Kind == 'k') scene.PressKey(action.Scan);

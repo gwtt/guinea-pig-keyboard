@@ -7,6 +7,8 @@ namespace WheekKeys
 {
     internal sealed class LocalPeers : IDisposable
     {
+        internal const int AnonymousKeyScan = 511;
+        private static readonly string AnonymousKeyToken = "k" + AnonymousKeyScan.ToString(CultureInfo.InvariantCulture);
         private readonly SortedDictionary<string, Peer> peers = new SortedDictionary<string, Peer>(StringComparer.Ordinal);
         private readonly Queue<PeerAction> pendingActions = new Queue<PeerAction>();
         private readonly Queue<ReceivedInteraction> receivedInteractions = new Queue<ReceivedInteraction>();
@@ -230,8 +232,7 @@ namespace WheekKeys
             {
                 PeerAction action = pendingActions.Dequeue();
                 if (now - action.Received > 0.8) continue;
-                // Reserved, unlabeled animation key understood by older WA1 clients.
-                actions.Add(action.Kind == 'k' ? "k511" : action.Kind.ToString());
+                actions.Add(action.Kind == 'k' ? AnonymousKeyToken : action.Kind.ToString());
             }
             if (actions.Count == 0) return;
             actionSequence++;
@@ -326,7 +327,7 @@ namespace WheekKeys
             {
                 long scan;
                 if (token == "l" || token == "r") actions.Add(new PeerAction { Kind = token[0], Received = now });
-                else if (token.Length >= 2 && token[0] == 'k' && TryCount(token.Substring(1), out scan) && scan > 0 && scan <= 511)
+                else if (token.Length >= 2 && token[0] == 'k' && TryCount(token.Substring(1), out scan) && scan > 0 && scan <= AnonymousKeyScan)
                     actions.Add(new PeerAction { Kind = 'k', Scan = (int)scan, Received = now });
                 else return;
             }

@@ -161,9 +161,9 @@ namespace WheekKeys
             StackPanel content = new StackPanel { Margin = new Thickness(0, 2, 0, 2) };
 
             StackPanel displayRows = new StackPanel();
-            displayRows.Children.Add(SliderRow("大小", "pet-size", 180, 600, owner.PetWidth, 100.0 / 310, owner.SetWidth));
+            displayRows.Children.Add(SliderRow("大小", "pet-size", owner.SizePercent, owner.SetSizePercent));
             displayRows.Children.Add(Divider());
-            displayRows.Children.Add(SliderRow("透明度", "pet-opacity", 20, 100, owner.Opacity * 100, 1, owner.SetOpacityPercent));
+            displayRows.Children.Add(SliderRow("透明度", "pet-opacity", owner.Opacity * 100, owner.SetOpacityPercent));
             content.Children.Add(Card("显示", displayRows));
 
             StackPanel behaviorRows = new StackPanel();
@@ -663,7 +663,7 @@ namespace WheekKeys
             return row;
         }
 
-        private StackPanel SliderRow(string label, string id, double min, double max, double initial, double percentScale, Action<double> change)
+        private StackPanel SliderRow(string label, string id, double initial, Action<double> change)
         {
             var value = Label(10.5, Ink);
             value.FontWeight = FontWeights.SemiBold;
@@ -681,8 +681,8 @@ namespace WheekKeys
 
             var slider = new Slider
             {
-                Minimum = min,
-                Maximum = max,
+                Minimum = 0,
+                Maximum = 100,
                 Value = initial,
                 TickFrequency = 1,
                 IsSnapToTickEnabled = true,
@@ -694,7 +694,7 @@ namespace WheekKeys
             };
             AutomationProperties.SetName(slider, label);
             AutomationProperties.SetAutomationId(slider, id);
-            Action update = delegate { value.Text = Math.Round(slider.Value * percentScale).ToString("0", CultureInfo.InvariantCulture) + "%"; };
+            Action update = delegate { value.Text = Math.Round(slider.Value).ToString("0", CultureInfo.InvariantCulture) + "%"; };
             update();
             slider.ValueChanged += delegate { update(); change(slider.Value); };
             return new StackPanel { Margin = new Thickness(0, 1, 0, 1), Children = { header, slider } };

@@ -36,8 +36,8 @@ import AppKit
     precondition((try! PetUpdateChecker.updateURL(releasePage: releasePage, currentVersion: "0.1.6")) == nil)
     let otherReleasePage = URL(string: "https://github.com/example/guinea-pig-keyboard/releases/tag/v0.1.6")!
     precondition((try? PetUpdateChecker.updateURL(releasePage: otherReleasePage, currentVersion: "0.1.5")) == nil)
-    precondition(initialPetScale(0) == 0.58 && initialPetScale(-1) == 0.58)
-    precondition(initialPetScale(1.25) == 1.25 && initialPetScale(0.1) == 0.5 && initialPetScale(3) == 2)
+    precondition(initialPetScale(nil) == 0.6 && initialPetScale(-1) == 0.6)
+    precondition(initialPetScale(0) == 0 && initialPetScale(0.58) == 0.58 && initialPetScale(1.25) == 1)
     let ownID = String(repeating: "a", count: 32)
     let remoteID = String(repeating: "b", count: 32)
     func parse(_ text: String) -> (String, LocalPeers.Peer)? {
@@ -162,7 +162,7 @@ import AppKit
     precondition(namedPeers[remoteID]?.takeAction(now: 18.3) == .key(110))
     precondition(!apply("WS1|\(ownID)|drawn-tricolor|1", now: 18) && namedPeers.count == 1)
     precondition(apply("WA1|\(remoteID)|6|k511", now: 19))
-    precondition(namedPeers[remoteID]?.takeAction(now: 19) == .key(UInt16.max))
+    precondition(namedPeers[remoteID]?.takeAction(now: 19) == .anonymousKey)
     precondition(NetworkKeyCodes.scan(for: 0) == 30 && NetworkKeyCodes.scan(for: 49) == 57 &&
                  NetworkKeyCodes.scan(for: 62) == 285 && NetworkKeyCodes.scan(for: 76) == 284 &&
                  NetworkKeyCodes.scan(for: 110) == 349)
@@ -212,27 +212,31 @@ import AppKit
     precondition(login.state == .mixed)
     login.performClick(nil)
     precondition(!loginRequested, "Pending login registration should be cancellable")
-    guard let scale = descendants(settingsView).compactMap({ $0 as? NSTextField }).first(where: { $0.stringValue == "58%" }) else {
+    guard let scale = descendants(settingsView).compactMap({ $0 as? NSTextField }).first(where: { $0.stringValue == "60%" }) else {
         fatalError("Scale display missing")
     }
-    settings.refreshOptions(opacity: 0.6, desk: "mocha")
     let sliders = descendants(settingsView).compactMap { $0 as? NSSlider }
-    precondition(sliders.contains { $0.minValue == 0.5 && $0.maxValue == 2 })
-    precondition(sliders.contains { $0.minValue == 0.2 && $0.maxValue == 1 })
-    var opacityChanged = 0.0, desk = ""
+    precondition(sliders.count == 2 && sliders.allSatisfy { $0.minValue == 0 && $0.maxValue == 1 })
+    let sizeControl = sliders.first { $0.doubleValue == 0.6 }!
+    let opacityControl = sliders.first { $0.doubleValue == 1 }!
+    settings.refreshOptions(opacity: 0.6, desk: "mocha")
+    var sizeChanged = -1.0, opacityChanged = -1.0, desk = ""
+    settings.onScaleChange = { sizeChanged = $0 }
     settings.onOpacityChange = { opacityChanged = $0 }
     settings.onDeskSkinChange = { desk = $0 }
-    let opacityControl = sliders.first { $0.minValue == 0.2 }!
+    sizeControl.doubleValue = 0; sizeControl.sendAction(sizeControl.action, to: sizeControl.target)
+    opacityControl.doubleValue = 0; opacityControl.sendAction(opacityControl.action, to: opacityControl.target)
+    precondition(sizeChanged == 0 && opacityChanged == 0 && scale.stringValue == "0%")
     opacityControl.doubleValue = 0.7; opacityControl.sendAction(opacityControl.action, to: opacityControl.target)
     let deskControl = controls.first { $0.title == "蜜桃奶盖" }!
     deskControl.sendAction(deskControl.action, to: deskControl.target)
     precondition(abs(opacityChanged - 0.7) < 0.001 && desk == "peach")
-    settings.refresh(skinID: "pixel-tricolor", scale: initialPetScale(0), showLabels: true, clickThrough: false,
+    settings.refresh(skinID: "pixel-tricolor", scale: initialPetScale(nil), showLabels: true, clickThrough: false,
                      keys: 0, clicks: 0, peers: [], networkStatus: "", roomCode: nil, roomConnected: false, nickname: "")
-    precondition(scale.stringValue == "58%")
+    precondition(scale.stringValue == "60%")
     settings.refresh(skinID: "pixel-tricolor", scale: initialPetScale(1.25), showLabels: true, clickThrough: false,
                      keys: 0, clicks: 0, peers: [], networkStatus: "", roomCode: nil, roomConnected: false, nickname: "")
-    precondition(scale.stringValue == "125%")
+    precondition(scale.stringValue == "100%")
     let skinButtons = descendants(settingsView).compactMap { $0 as? NSButton }.filter {
         let id = $0.identifier?.rawValue ?? ""
         return PetSkin.all.contains { $0.id == id }
@@ -321,7 +325,7 @@ import AppKit
     var delivered = false
     desktop.update(owner: owner, members: [remoteID: firstPeer], clickThrough: true, showLabels: true) { id in
         delivered = id == remoteID
-        return .key(0)
+        return .anonymousKey
     }
     guard let friend = desktop.window(for: remoteID) else { fatalError("Friend window missing") }
     precondition(desktop.count == 1 && friend.isVisible && friend.ignoresMouseEvents && delivered)
