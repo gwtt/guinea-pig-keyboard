@@ -13,20 +13,33 @@ namespace WheekKeys
     internal sealed class CursorTheme
     {
         private const uint SpiSetCursors = 0x0057;
-        private const uint SpifUpdateIniFile = 0x01;
-        private const uint SpifSendChange = 0x02;
+        private const uint PersonCursorId = 32672;
         private const string CursorsRegPath = @"Control Panel\Cursors";
 
         private static readonly Dictionary<string, string> SystemRoles = new Dictionary<string, string>
         {
             { "Arrow", "arrow" }, { "Hand", "hand" }, { "IBeam", "ibeam" },
-            { "Wait", "busy" }, { "AppStarting", "busy" },
+            { "Wait", "busy" }, { "AppStarting", "working" },
+            { "Help", "help" }, { "Crosshair", "precision" }, { "NWPen", "pen" },
+            { "No", "unavailable" }, { "UpArrow", "alternate" }, { "SizeAll", "move" },
+            { "Pin", "location" }, { "Person", "person" },
             { "SizeNS", "resize-ns" }, { "SizeWE", "resize-we" },
             { "SizeNWSE", "resize-nwse" }, { "SizeNESW", "resize-nesw" }
         };
 
+        private static readonly string[] LegacyDefaultRoles = { "Arrow", "Hand", "IBeam", "Wait", "AppStarting" };
+
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr LoadCursorFromFile(string fileName);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetSystemCursor(IntPtr cursor, uint id);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyCursor(IntPtr cursor);
 
         internal struct RoleSpec
         {
@@ -64,7 +77,23 @@ namespace WheekKeys
                 "pixel", "复古像素猪", "桌宠同款 · 锐利像素风",
                 new Color[] { Color.FromArgb(255, 246, 232), Color.FromArgb(242, 182, 160), Color.FromArgb(62, 39, 22) },
                 true,
-                CreateRoles(4, 4, 22, 10))
+                CreateRoles(4, 4, 22, 10)),
+            new CursorTheme(
+                "piggy-pixel", "三花猪猪", "像素三花 · 手绘指针",
+                new Color[] { Color.FromArgb(255, 243, 218), Color.FromArgb(244, 162, 167), Color.FromArgb(85, 46, 35) },
+                true,
+                new RoleSpec[]
+                {
+                    new RoleSpec("arrow", 4, 4), new RoleSpec("help", 4, 4),
+                    new RoleSpec("working", 4, 4), new RoleSpec("busy", 50, 28),
+                    new RoleSpec("ibeam", 20, 32), new RoleSpec("precision", 32, 32),
+                    new RoleSpec("pen", 6, 56), new RoleSpec("unavailable", 48, 16),
+                    new RoleSpec("hand", 2, 14), new RoleSpec("alternate", 32, 2),
+                    new RoleSpec("location", 32, 60), new RoleSpec("person", 30, 14),
+                    new RoleSpec("move", 32, 32), new RoleSpec("resize-we", 32, 32),
+                    new RoleSpec("resize-ns", 32, 32), new RoleSpec("resize-nwse", 32, 32),
+                    new RoleSpec("resize-nesw", 32, 32)
+                })
         };
 
         private static RoleSpec[] CreateRoles(int arrowX, int arrowY, int handX, int handY)
@@ -111,11 +140,26 @@ namespace WheekKeys
 
         internal static string Apply(CursorTheme theme, string dataDirectory)
         {
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(CursorsRegPath))
+            {
+                if (key == null) throw new InvalidOperationException("无法打开当前用户指针配置项。");
+                return ApplyTheme(theme, dataDirectory, key, personChanged => RefreshSystemCursors(key, personChanged));
+            }
+        }
+
+        private static string ApplyTheme(CursorTheme theme, string dataDirectory, RegistryKey key, Action<bool> refresh)
+        {
             if (theme == null) theme = SystemDefault;
             string backupPath = Path.Combine(dataDirectory, "cursor-backup.txt");
             if (theme.IsSystem)
             {
-                RestoreFromBackup(backupPath);
+                Dictionary<string, string> saved = ReadBackup(backupPath);
+                // Older backups may omit roles that were never replaced.
+                foreach (string name in LegacyDefaultRoles)
+                    if (!saved.ContainsKey(name)) saved.Add(name, "");
+                WriteSystemCursors(key, saved, refresh);
+                try { if (File.Exists(backupPath)) File.Delete(backupPath); }
+                catch { }
                 return "已恢复系统默认指针";
             }
 
@@ -139,16 +183,23 @@ namespace WheekKeys
                 writtenFiles[spec.Role] = curPath;
             }
 
-            EnsureBackup(backupPath, cursorsRoot);
+            // Older themes use their busy artwork for background work as well.
+            if (!writtenFiles.ContainsKey("working")) writtenFiles.Add("working", writtenFiles["busy"]);
 
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(CursorsRegPath))
+            Dictionary<string, string> changes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> role in SystemRoles)
             {
-                if (key == null) throw new InvalidOperationException("无法打开当前用户指针配置项。");
-                foreach (KeyValuePair<string, string> role in SystemRoles)
-                    key.SetValue(role.Key, writtenFiles[role.Value], RegistryValueKind.ExpandString);
+                string file;
+                if (writtenFiles.TryGetValue(role.Value, out file)) changes.Add(role.Key, file);
             }
+            Dictionary<string, string> backup = EnsureBackup(key, backupPath, cursorsRoot, changes.Keys);
+            foreach (KeyValuePair<string, string> original in backup)
+            {
+                if (!changes.ContainsKey(original.Key) && IsWheekCursorPath(ReadCursorPath(key, original.Key), cursorsRoot))
+                    changes.Add(original.Key, original.Value);
+            }
+            WriteSystemCursors(key, changes, refresh);
 
-            RefreshSystemCursors();
             return "已应用「" + theme.Name + "」· 可随时切回系统默认";
         }
 
@@ -159,29 +210,30 @@ namespace WheekKeys
             foreach (string line in File.ReadAllLines(backupPath))
             {
                 int sep = line.IndexOf('=');
-                if (sep > 0) saved[line.Substring(0, sep)] = line.Substring(sep + 1);
+                string name = sep < 0 ? line : line.Substring(0, sep);
+                if (SystemRoles.ContainsKey(name))
+                    saved[name] = sep < 0 ? null : line.Substring(sep + 1);
             }
             return saved;
         }
 
-        private static void EnsureBackup(string backupPath, string cursorsRoot)
+        private static Dictionary<string, string> EnsureBackup(
+            RegistryKey key, string backupPath, string cursorsRoot, IEnumerable<string> names)
         {
             Dictionary<string, string> saved = ReadBackup(backupPath);
             bool changed = false;
-            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(CursorsRegPath, false))
+            foreach (string name in names)
             {
-                foreach (string name in SystemRoles.Keys)
-                {
-                    if (saved.ContainsKey(name)) continue;
-                    string raw = key == null ? "" : (key.GetValue(name, "", RegistryValueOptions.DoNotExpandEnvironmentNames) as string ?? "");
-                    if (raw.IndexOf(cursorsRoot, StringComparison.OrdinalIgnoreCase) >= 0) raw = "";
-                    saved.Add(name, raw);
-                    changed = true;
-                }
+                if (saved.ContainsKey(name)) continue;
+                string raw = ReadCursorPath(key, name);
+                saved.Add(name, IsWheekCursorPath(raw, cursorsRoot) ? "" : raw);
+                changed = true;
             }
-            if (!changed) return;
+            if (!changed) return saved;
             List<string> lines = new List<string>();
-            foreach (KeyValuePair<string, string> pair in saved) lines.Add(pair.Key + "=" + pair.Value);
+            // A bare name records that the registry value originally did not exist.
+            foreach (KeyValuePair<string, string> pair in saved)
+                lines.Add(pair.Value == null ? pair.Key : pair.Key + "=" + pair.Value);
             string pending = backupPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
@@ -190,33 +242,64 @@ namespace WheekKeys
                 else File.Move(pending, backupPath);
             }
             finally { if (File.Exists(pending)) File.Delete(pending); }
+            return saved;
         }
 
-        private static void RestoreFromBackup(string backupPath)
+        private static string ReadCursorPath(RegistryKey key, string name)
         {
-            Dictionary<string, string> saved = ReadBackup(backupPath);
+            return key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+        }
 
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(CursorsRegPath))
+        private static bool IsWheekCursorPath(string file, string root)
+        {
+            return file != null && file.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void WriteCursorPath(RegistryKey key, string name, string file)
+        {
+            if (file == null) key.DeleteValue(name, false);
+            else key.SetValue(name, file, RegistryValueKind.ExpandString);
+        }
+
+        private static void WriteSystemCursors(RegistryKey key, Dictionary<string, string> changes, Action<bool> refresh)
+        {
+            Dictionary<string, string> previous = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
             {
-                if (key == null) throw new InvalidOperationException("无法打开当前用户指针配置项。");
-                foreach (string name in SystemRoles.Keys)
+                foreach (KeyValuePair<string, string> change in changes)
                 {
-                    string value;
-                    // Older versions only backed up the resize cursors they could replace.
-                    if (!saved.TryGetValue(name, out value) && name.StartsWith("Size", StringComparison.Ordinal)) continue;
-                    key.SetValue(name, value ?? "", RegistryValueKind.ExpandString);
+                    previous.Add(change.Key, ReadCursorPath(key, change.Key));
+                    WriteCursorPath(key, change.Key, change.Value);
                 }
+                refresh(changes.ContainsKey("Person"));
             }
-
-            try { if (File.Exists(backupPath)) File.Delete(backupPath); }
-            catch { }
-
-            RefreshSystemCursors();
+            catch
+            {
+                foreach (KeyValuePair<string, string> original in previous)
+                    WriteCursorPath(key, original.Key, original.Value);
+                try { refresh(previous.ContainsKey("Person")); }
+                catch { }
+                throw;
+            }
         }
 
-        private static void RefreshSystemCursors()
+        private static void RefreshSystemCursors(RegistryKey key, bool personChanged)
         {
-            SystemParametersInfo(SpiSetCursors, 0, IntPtr.Zero, SpifUpdateIniFile | SpifSendChange);
+            // The cursor paths have already been saved to the registry.
+            if (!SystemParametersInfo(SpiSetCursors, 0, IntPtr.Zero, 0))
+                throw new InvalidOperationException("Windows 无法刷新系统指针。");
+
+            // Some Windows versions skip Person when reloading the scheme.
+            if (!personChanged) return;
+            string cursorDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Cursors");
+            string path = key.GetValue("Person") as string;
+            IntPtr cursor = string.IsNullOrEmpty(path)
+                ? IntPtr.Zero
+                : LoadCursorFromFile(Path.Combine(cursorDirectory, path));
+            if (cursor == IntPtr.Zero)
+                cursor = LoadCursorFromFile(Path.Combine(cursorDirectory, "aero_person.cur"));
+            if (cursor != IntPtr.Zero && !SetSystemCursor(cursor, PersonCursorId))
+                DestroyCursor(cursor);
         }
 
         private static byte[] ReadResourceBytes(string resourceName)

@@ -64,6 +64,17 @@ struct CursorTheme {
                 RoleSpec(role: "busy", systemCursorName: "com.apple.coregraphics.Wait", hotspotX64: 32, hotspotY64: 32),
             ] + resizeRoles
         ),
+        CursorTheme(
+            id: "piggy-pixel",
+            name: "三花猪猪",
+            summary: "像素三花 · 手绘指针",
+            roles: [
+                RoleSpec(role: "arrow", systemCursorName: "com.apple.coregraphics.Arrow", hotspotX64: 4, hotspotY64: 4),
+                RoleSpec(role: "hand", systemCursorName: "com.apple.cursor.13", hotspotX64: 2, hotspotY64: 14),
+                RoleSpec(role: "ibeam", systemCursorName: "com.apple.coregraphics.IBeam", hotspotX64: 20, hotspotY64: 32),
+                RoleSpec(role: "busy", systemCursorName: "com.apple.coregraphics.Wait", hotspotX64: 50, hotspotY64: 28),
+            ] + resizeRoles
+        ),
     ]
 
     static func named(_ id: String?) -> CursorTheme {
