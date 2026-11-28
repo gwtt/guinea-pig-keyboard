@@ -518,9 +518,9 @@ final class PetView: NSView {
         if let cached = images[cacheKey] { return cached }
         guard let original = image(kind + ".png"), let reference = image("reference-" + kind + ".png"),
               let target = image(kind + "-" + theme + ".png"),
-              reference.width == target.width, reference.height == target.height else { return nil }
-        let source = NSBitmapImageRep(cgImage: reference), themed = NSBitmapImageRep(cgImage: target)
-        let output = NSBitmapImageRep(cgImage: original)
+              reference.width == target.width, reference.height == target.height,
+              let source = editableRGBABitmap(reference), let themed = editableRGBABitmap(target),
+              let output = editableRGBABitmap(original) else { return nil }
         func components(_ color: NSColor?) -> [Int]? {
             guard let c = color?.usingColorSpace(.sRGB), c.alphaComponent > 0 else { return nil }
             return [c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) }

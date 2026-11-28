@@ -1,5 +1,16 @@
 import AppKit
 
+func editableRGBABitmap(_ image: CGImage) -> NSBitmapImageRep? {
+    guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: image.width, pixelsHigh: image.height,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: image.width * 4, bitsPerPixel: 32),
+        let context = NSGraphicsContext(bitmapImageRep: bitmap)?.cgContext else { return nil }
+    context.interpolationQuality = .none
+    context.setBlendMode(.copy)
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return bitmap
+}
+
 struct PetSkin {
     let id: String
     let name: String
@@ -62,7 +73,7 @@ struct PetSkin {
             default: brown = 0xE7C383
             }
             let preserveLight = ["prone-black-white", "prone-golden-white", "prone-longhair"].contains(id)
-            let bitmap = NSBitmapImageRep(cgImage: source)
+            guard let bitmap = editableRGBABitmap(source) else { return nil }
             for y in 0..<bitmap.pixelsHigh {
                 for x in 0..<bitmap.pixelsWide {
                     guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), pixel.alphaComponent > 0 else { continue }
@@ -123,7 +134,7 @@ struct PetSkin {
     }
 
     private static func recolor(_ source: CGImage, base: PetSkin, fur: UInt32?, ink: UInt32?) -> CGImage? {
-        let rep = NSBitmapImageRep(cgImage: source)
+        guard let rep = editableRGBABitmap(source) else { return nil }
         func rgb(_ value: UInt32) -> [Int] { [Int((value >> 16) & 255), Int((value >> 8) & 255), Int(value & 255)] }
         func components(_ color: CGColor) -> [Int] {
             let c = NSColor(cgColor: color)!.usingColorSpace(.sRGB)!

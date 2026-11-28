@@ -2,6 +2,10 @@ import AppKit
 
 // Runs against the packaged application on both Mac architectures in CI.
 @MainActor func runSmokeTest() {
+    func precondition(_ condition: @autoclosure () -> Bool, _ message: @autoclosure () -> String = "Smoke check failed",
+                      file: StaticString = #fileID, line: UInt = #line) {
+        guard condition() else { fatalError(message(), file: file, line: line) }
+    }
     try! runWheekPackSmokeTest()
     precondition(!AnonymousKeyboardInput.canRun(authorized: false, secureInput: false))
     precondition(!AnonymousKeyboardInput.canRun(authorized: true, secureInput: true))
