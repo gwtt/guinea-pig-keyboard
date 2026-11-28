@@ -115,7 +115,6 @@ internal static class PixelSkinSmokeTest
                     && (string)windowType.GetProperty("Nickname", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(owner, null) == "测试豚鼠", "legacy placeholder keeps subsequent fields aligned");
             }
             CheckPacks(assembly, owner);
-            CheckDailyActivity(assembly);
             CheckRenderLifecycle(assembly);
             CheckNetworkCompatibility(assembly);
             CheckReleaseSelection(assembly);
@@ -170,8 +169,8 @@ internal static class PixelSkinSmokeTest
         string version = app.GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion;
         TextBlock versionLabel = texts.Single(element => element.Text == "v" + version);
         Check(!texts.Any(element => element.Text.Contains("桌宠设置")), "header omits the settings subtitle");
-        Check(versionLabel.FontSize < title.FontSize && ((SolidColorBrush)versionLabel.Foreground).Color == Colors.Gray,
-            "settings version label appears in smaller gray text");
+        Check(versionLabel.FontSize < title.FontSize && !Equals(versionLabel.Foreground, title.Foreground),
+            "settings version label appears in smaller muted text");
         Button update = LogicalElements(settings).OfType<Button>().Single(button => System.Windows.Automation.AutomationProperties.GetAutomationId(button) == "install-update");
         Check(update.Visibility == Visibility.Collapsed, "update button hidden initially");
         Check(Object.ReferenceEquals(LogicalTreeHelper.GetParent(title), LogicalTreeHelper.GetParent(update)), "update button is on the title row");
@@ -188,22 +187,19 @@ internal static class PixelSkinSmokeTest
         size.Value = 330;
         opacity.Value = 64;
         Check(((Window)owner).Opacity == 0.64, "opacity preview");
-        var sleep = LogicalElements(settings).OfType<ComboBox>().Single();
-        sleep.SelectedIndex = 3;
-        Check((int)owner.GetType().GetProperty("SleepSeconds", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(owner, null) == 0, "sleep can be disabled");
+        owner.GetType().GetMethod("SaveSettings", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(owner, null);
         var profile = File.ReadAllLines((string)Field(owner, "settingsPath"));
-        Check(profile[13] == "64" && profile[14] == "0", "appearance preferences are persisted");
-        sleep.SelectedIndex = 1;
+        Check(profile[13] == "64", "appearance preferences are persisted");
         opacity.Value = 100;
         var grid = (UniformGrid)Field(settings, "skinGrid");
         var groupButtons = (IDictionary)Field(settings, "groupButtons");
-        foreach (string group in new[] { "短毛", "长毛", "趴趴猪", "自定义" })
+        foreach (string group in new[] { "短毛", "长毛", "趴趴猪" })
         {
             ((Button)groupButtons[group]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var visible = grid.Children.OfType<FrameworkElement>().Where(tile => tile.Visibility == Visibility.Visible).ToArray();
-            Check(visible.Length == (group == "自定义" ? 0 : group == "趴趴猪" ? 8 : 7) && visible.All(tile => Equals(tile.Tag, group)), "filter " + group);
+            Check(visible.Length == (group == "趴趴猪" ? 8 : 7) && visible.All(tile => Equals(tile.Tag, group)), "filter " + group);
         }
-        Check(LogicalText(settings).Contains("在爱发电支持豚鼠") && LogicalText(settings).Contains("喂草"), "support and feeding entries");
+        Check(LogicalText(settings).Contains("前往爱发电支持 →"), "support entry");
         object updater = owner.GetType().GetProperty("Updater", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(owner, null);
         Type updaterType = updater.GetType();
         Type releaseType = updaterType.GetNestedType("Release", BindingFlags.NonPublic);
@@ -269,7 +265,7 @@ internal static class PixelSkinSmokeTest
             }
             Check(Equals(roomCode.GetValue(network, null), code) && (bool)roomPublic.GetValue(network, null), "row joins listed room");
             click("退出房间");
-            tabs.Single(tab => Equals(tab.Content, "桌宠")).IsChecked = true;
+            tabs.Single(tab => Equals(tab.Content, "外观")).IsChecked = true;
             Check(Field(settings, "roomDirectory") == null, "leaving lobby stops discovery");
         }
         finally
@@ -370,24 +366,6 @@ internal static class PixelSkinSmokeTest
     private static object Field(object value, string name)
     {
         return value.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(value);
-    }
-
-    private static void CheckDailyActivity(Assembly app)
-    {
-        const BindingFlags methods = BindingFlags.Instance | BindingFlags.NonPublic;
-        Type type = app.GetType("WheekKeys.DailyActivity", true);
-        object activity = Activator.CreateInstance(type, true);
-        string day = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        type.GetMethod("Restore", methods).Invoke(activity, new object[] { day, "999", "7" });
-        var key = type.GetMethod("RecordKey", methods);
-        Check(((string)key.Invoke(activity, new object[] { 2.0 })).Contains("1000"), "daily milestone");
-        for (int n = 0; n < 10; n++) Check(key.Invoke(activity, new object[] { 3.0 + n * 0.01 }) == null, "milestone cooldown");
-        string burst = null;
-        for (int n = 0; n < 10; n++) burst = (string)key.Invoke(activity, new object[] { 34.0 + n * 0.08 });
-        Check(burst != null, "typing burst after cooldown");
-        type.GetMethod("StartDay", methods).Invoke(activity, new object[] { DateTime.Today.AddDays(1) });
-        Check((long)type.GetProperty("Keys", methods).GetValue(activity, null) == 0 &&
-            (long)type.GetProperty("Clicks", methods).GetValue(activity, null) == 0, "daily rollover resets keys and clicks");
     }
 
     private static void Pump()

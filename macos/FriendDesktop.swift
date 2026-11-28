@@ -73,9 +73,6 @@ final class FriendDesktop {
             if friend.name.stringValue != label { friend.name.stringValue = label }
             friend.window.ignoresMouseEvents = clickThrough
             friend.window.alphaValue = owner.alphaValue
-            if let ownerPet = owner.contentView as? PetView, ownerPet.sleepDelay != friend.pet.sleepDelay {
-                friend.pet.sleepDelay = ownerPet.sleepDelay
-            }
             friend.layout(at: frame)
             let labelWidth = min(frame.width - 12, friend.name.intrinsicContentSize.width + 14)
             friend.name.frame = NSRect(x: (frame.width - labelWidth) / 2, y: 6, width: labelWidth, height: 18)

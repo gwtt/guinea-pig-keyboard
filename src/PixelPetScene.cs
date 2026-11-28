@@ -64,11 +64,6 @@ namespace WheekKeys
         private int blinkFrame;
         private readonly IdleSleepAnimation sleep = new IdleSleepAnimation();
         private readonly PetReactions reactions = new PetReactions();
-        internal bool KeyboardGlowEnabled
-        {
-            get { return reactions.GlowEnabled; }
-            set { reactions.GlowEnabled = value; InvalidateVisual(); }
-        }
         internal void LocalKeyDown(int scan) { reactions.Press(scan == 0x0e, clock.Elapsed.TotalMilliseconds); }
         internal void LocalMouseMove(double dx, double dy)
         {
@@ -200,12 +195,6 @@ namespace WheekKeys
             hopStarted = now;
             mouth.Trigger(now);
             Wake();
-        }
-
-        internal int SleepSeconds
-        {
-            get { return sleep.DelaySeconds; }
-            set { sleep.SetDelay(value, clock.Elapsed.TotalMilliseconds); InvalidateVisual(); }
         }
 
         private Vector HopOffset(double now)
@@ -659,7 +648,6 @@ namespace WheekKeys
                     PixelKeyboardArt.DrawPressed(dc, desk, rearLeft.Scan, rearLeft.Contact(now), PixelKeyboardArt.IsRight(rearLeft.Scan));
                     PixelKeyboardArt.DrawPressed(dc, desk, rearRight.Scan, rearRight.Contact(now), PixelKeyboardArt.IsRight(rearRight.Scan));
                 }
-                PixelKeyboardArt.DrawGlow(dc, desk, reactions.GlowPhase(now), reactions.GlowStrength(now));
                 if (twist != null) dc.PushTransform(twist);
                 if (drawnProne.Compact) DrawCompactFeet(dc, drawnPose, startle, now, true);
                 Eyes.Draw(dc, bodyBounds, headOffset, blink, drowsiness, eyeScale, mouth.Frame, dozeMouth);
@@ -674,7 +662,6 @@ namespace WheekKeys
                 if (twist != null) dc.Pop();
                 if (PenActive(now)) DrawPen(dc); else DrawMouse(dc, click);
                 PixelKeyboardArt.Draw(dc, desk, right.Scan, r, left.Scan, l);
-                PixelKeyboardArt.DrawGlow(dc, desk, reactions.GlowPhase(now), reactions.GlowStrength(now));
                 if (twist != null) dc.PushTransform(twist);
                 // Both forelegs start on the visible chest and pass in front of the desk.
                 DrawForeleg(dc, left.Rest, lp, lean + startle.X, dip + startle.Y);

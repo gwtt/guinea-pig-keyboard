@@ -7,10 +7,9 @@ namespace WheekKeys
     {
         private double lastMotion = double.NegativeInfinity, turnStarted;
         private Vector distance, direction;
-        private int turns, combo, backspaces;
-        private double lastKey = double.NegativeInfinity, glowStarted, panicUntil;
+        private int turns, backspaces;
+        private double lastKey = double.NegativeInfinity, panicUntil;
         private double jumpStarted = double.NegativeInfinity;
-        internal bool GlowEnabled;
 
         internal void Move(double dx, double dy, double now)
         {
@@ -33,20 +32,13 @@ namespace WheekKeys
 
         internal void Press(bool backspace, double now)
         {
-            combo = now - lastKey <= 220 ? Math.Min(5, combo + 1) : 1;
-            if (combo == 4) glowStarted = now;
             backspaces = backspace ? (now - lastKey <= 400 ? backspaces + 1 : 1) : 0;
             if (backspaces == 4) { panicUntil = now + 1250; backspaces = 0; }
             lastKey = now;
         }
 
         internal bool Panicked(double now) { return now < panicUntil; }
-        internal double GlowStrength(double now)
-        {
-            return GlowEnabled && combo >= 4 ? Math.Max(0, Math.Min(1, (900 - (now - lastKey)) / 400)) : 0;
-        }
-        internal double GlowPhase(double now) { return ((now - glowStarted) % 720) / 720; }
-        internal bool Animating(double now) { return now - jumpStarted < 840 || Panicked(now) || GlowStrength(now) > 0; }
+        internal bool Animating(double now) { return now - jumpStarted < 840 || Panicked(now); }
 
         internal Vector Popcorn(double now, out double angle)
         {

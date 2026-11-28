@@ -63,7 +63,6 @@ final class PetView: NSView {
         noteInput(now, twitch: true)
         wake(now)
     }
-    func feedGrass() { celebrate("鲜草真好吃 ☘") }
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2, let onPetHead = onPetHead {
             let point = convert(event.locationInWindow, from: nil)
@@ -189,7 +188,6 @@ final class PetView: NSView {
     private var mouseGrip: CGFloat = 0
     private var rightButton = false
     var showKeyLabels = true { didSet { needsDisplay = true } }
-    var keyboardGlowEnabled = false { didSet { needsDisplay = true } }
     private var shakeDistance = CGPoint.zero
     private var shakeDirection = CGPoint.zero
     private var shakeTurns = 0
@@ -198,19 +196,15 @@ final class PetView: NSView {
     private var popcornStarted: TimeInterval = -.infinity
     private var backspaces = 0
     private var panicUntil: TimeInterval = -.infinity
-    private var comboCount = 0
-    private var glowStarted: TimeInterval = -.infinity
     private var lastLocalKey: TimeInterval = -.infinity
 
     func localKeyDown(_ code: UInt16?) {
         let now = ProcessInfo.processInfo.systemUptime
         let interval = now - lastLocalKey
-        comboCount = interval <= 0.220 ? min(comboCount + 1, 5) : 1
-        if comboCount == 4 { glowStarted = now }
         backspaces = code == 51 ? (interval <= 0.400 ? backspaces + 1 : 1) : 0
         if backspaces == 4 { panicUntil = now + 1.250; backspaces = 0 }
         lastLocalKey = now
-        if now < panicUntil || (keyboardGlowEnabled && comboCount >= 4) { wake(now) }
+        if now < panicUntil { wake(now) }
     }
     func localMouseMove(dx: Double, dy: Double) {
         moveMouse(dx: dx, dy: dy)
@@ -411,8 +405,7 @@ final class PetView: NSView {
         advanceMouse(now)
         if !left.active && !right.active && !rearLeft.active && !rearRight.active && mouseGrip == 0 && mousePosition == mouseDestination
             && now - lastMouseUse > 0.250 && blinkStarted == nil && gazeFrame == 0
-            && now - celebrationStarted > 1.6 && now - popcornStarted >= 0.840 && now >= panicUntil
-            && (!keyboardGlowEnabled || comboCount < 4 || now - lastLocalKey >= 0.900) {
+            && now - celebrationStarted > 1.6 && now - popcornStarted >= 0.840 && now >= panicUntil {
             timer?.invalidate()
             timer = nil
         }
@@ -674,18 +667,6 @@ final class PetView: NSView {
     }
     private func drawDeskAndPaws(_ pose: Pose, l: CGFloat, r: CGFloat, mouseFrame: Int, offset: CGPoint, angle: CGFloat, _ ctx: CGContext) {
         drawKeyboard(ctx)
-        let glowNow = ProcessInfo.processInfo.systemUptime
-        if keyboardGlowEnabled && comboCount >= 4 && glowNow - lastLocalKey <= 0.9 {
-            let phase = (glowNow - glowStarted).truncatingRemainder(dividingBy: 0.720) / 0.720
-            let strength = max(0, min(1, (0.900 - (glowNow - lastLocalKey)) / 0.400))
-            let index = min(Self.keys.count - 1, Int(phase * Double(Self.keys.count)))
-            let key = Self.keys[index]
-            ctx.saveGState()
-            ctx.setAlpha(CGFloat(strength * 0.6))
-            ctx.setFillColor((deskSkinID == "mocha" ? NSColor.systemYellow : NSColor.white).cgColor)
-            ctx.fillEllipse(in: CGRect(x: key.center.x - 4, y: key.center.y - 3, width: 8, height: 6))
-            ctx.restoreGState()
-        }
         if l > 0 { drawPressed(keyInfo(left.code), l, ctx) }
         if r > 0 { drawPressed(keyInfo(right.code), r, ctx) }
         let now = ProcessInfo.processInfo.systemUptime

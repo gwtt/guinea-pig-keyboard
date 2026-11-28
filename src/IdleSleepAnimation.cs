@@ -8,8 +8,7 @@ namespace WheekKeys
 {
     internal sealed class IdleSleepAnimation
     {
-        internal int DelaySeconds { get; private set; }
-        private double IdleDelayMilliseconds { get { return DelaySeconds * 1000.0; } }
+        public const double IdleDelayMilliseconds = 30000;
         public const double CloseMilliseconds = 700;
         public const double WakeMilliseconds = 420;
         public const double MotionWakeMilliseconds = 1600;
@@ -19,17 +18,6 @@ namespace WheekKeys
         private static readonly Brush SleepBrush = MakeBrush();
         private static readonly Geometry[] PixelLetters = { MakePixelZ(2), MakePixelZ(2), MakePixelZ(3) };
         private static readonly FormattedText[] Letters = { MakeText(12), MakeText(14), MakeText(16) };
-
-        public IdleSleepAnimation() { DelaySeconds = 30; }
-
-        internal void SetDelay(int seconds, double now)
-        {
-            if (seconds != 0 && seconds != 15 && seconds != 30 && seconds != 60) seconds = 30;
-            if (DelaySeconds == seconds) return;
-            DelaySeconds = seconds;
-            lastActivity = now;
-            wakeAmount = 0;
-        }
 
         public void RecordActivity(double now)
         {
@@ -45,7 +33,7 @@ namespace WheekKeys
 
         public double Progress(double now)
         {
-            return DelaySeconds == 0 ? 0 : Math.Max(0, Math.Min(1, (now - lastActivity - IdleDelayMilliseconds) / CloseMilliseconds));
+            return Math.Max(0, Math.Min(1, (now - lastActivity - IdleDelayMilliseconds) / CloseMilliseconds));
         }
 
         internal double TimeSinceDozeStarted(double now)

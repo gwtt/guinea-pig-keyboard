@@ -198,8 +198,6 @@ namespace WheekKeys
             {
                 this.now = now;
                 scene.Skin = peer.Skin;
-                PetWindow pet = window.Owner as PetWindow;
-                if (pet != null && scene.SleepSeconds != pet.SleepSeconds) scene.SleepSeconds = pet.SleepSeconds;
                 if (scene.ShowKeyLabels != showLabels) scene.ShowKeyLabels = showLabels;
                 MatchSize();
                 LocalPeers.PeerAction action;

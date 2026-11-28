@@ -62,13 +62,6 @@ internal static class PenInputSmokeTest
         slowKeys.Press(true, 0); slowKeys.Press(true, 100); slowKeys.Press(true, 200);
         slowKeys.Press(true, 601);
         Check(!slowKeys.Panicked(601), "backspace interval resets count");
-        PetReactions glow = new PetReactions();
-        for (int i = 0; i < 4; i++) glow.Press(false, i * 100);
-        Check(glow.GlowStrength(300) == 0, "combo glow disabled by default");
-        glow.GlowEnabled = true;
-        Check(glow.GlowStrength(300) == 1 && glow.GlowStrength(1000) > 0 && glow.GlowStrength(1200) == 0, "combo glow activation and decay");
-        glow.GlowEnabled = false;
-        Check(glow.GlowStrength(350) == 0, "combo glow switch off");
     }
 
 }

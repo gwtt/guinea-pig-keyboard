@@ -20,8 +20,8 @@ using Rectangle = System.Windows.Shapes.Rectangle;
 
 [assembly: AssemblyProduct("WheekKeys")]
 [assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8")]
-[assembly: AssemblyVersion("0.2.0.0")]
-[assembly: AssemblyInformationalVersion("0.2.0")]
+[assembly: AssemblyVersion("0.2.1.0")]
+[assembly: AssemblyInformationalVersion("0.2.1")]
 
 namespace WheekKeys
 {
@@ -79,13 +79,12 @@ namespace WheekKeys
         private readonly AppUpdater updater = new AppUpdater(DataDirectory);
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private long keyCount, clickCount;
-        private readonly DailyActivity today = new DailyActivity();
         private string nickname = "";
         private bool settingsDirty;
         private double nextSave;
         private DesktopInput input;
         private PenInput penInput;
-        private bool clickThrough, altHeld, hideInFullscreen, hiddenForFullscreen;
+        private bool clickThrough, altHeld;
         private bool ready;
         private PetSettings settingsWindow;
         private Drawing.Icon ownedIcon;
@@ -115,7 +114,7 @@ namespace WheekKeys
             Content = panel;
             WheekPackLoader.EnableDrop(this, ImportSkin);
             settingsPath = Path.Combine(DataDirectory, "settings.txt");
-            placement = new WindowPlacement(this, delegate { SaveSettings(); }, delegate { InteractLocally(false); return true; });
+            placement = new WindowPlacement(this, delegate { SaveSettings(); }, delegate { InteractLocally(); return true; });
             RestoreSettings();
             friends = new FriendDesktop(this, view);
             tray = new Forms.NotifyIcon();
@@ -157,8 +156,6 @@ namespace WheekKeys
             timer.Tick += delegate
             {
                 double now = clock.Elapsed.TotalSeconds;
-                UpdateFullscreenVisibility();
-                if (today.StartDay(DateTime.Today)) settingsDirty = true;
                 if (settingsWindow != null) settingsWindow.RefreshActivity();
                 if (settingsDirty && now >= nextSave)
                 {
@@ -223,11 +220,8 @@ namespace WheekKeys
             double now = clock.Elapsed.TotalSeconds;
             if (firstPress)
             {
-                today.StartDay(DateTime.Today);
                 if (IsVisible) scene.LocalKeyDown(scan);
                 if (keyCount < long.MaxValue) keyCount++;
-                string message = today.RecordKey(now);
-                if (message != null && IsVisible) { scene.TriggerHop(); overlay.Show(message); }
                 settingsDirty = true;
                 peers.RecordTyping(now);
             }
@@ -236,8 +230,6 @@ namespace WheekKeys
 
         private void OnClick(bool right)
         {
-            today.StartDay(DateTime.Today);
-            today.RecordClick();
             if (clickCount < long.MaxValue) clickCount++;
             settingsDirty = true;
             peers.RecordClick(right, clock.Elapsed.TotalSeconds);
@@ -321,14 +313,6 @@ namespace WheekKeys
         internal LocalPeers Network { get { return peers; } }
         internal long KeyCount { get { return keyCount; } }
         internal long ClickCount { get { return clickCount; } }
-        internal DailyActivity Today { get { return today; } }
-        internal bool HideInFullscreen { get { return hideInFullscreen; } }
-        internal int SleepSeconds { get { return scene.SleepSeconds; } }
-        internal bool KeyboardGlowEnabled
-        {
-            get { return scene.KeyboardGlowEnabled; }
-            set { scene.KeyboardGlowEnabled = value; SaveSettings(); }
-        }
         internal string Nickname { get { return nickname; } }
         internal AppUpdater Updater { get { return updater; } }
 
@@ -381,38 +365,16 @@ namespace WheekKeys
             }
         }
 
-        internal void InteractLocally(bool feed)
+        internal void InteractLocally()
         {
             scene.TriggerHop();
-            overlay.Show(feed ? "啊呜，鲜草真好吃 ☘" : "摸摸头 ♡");
-        }
-
-        internal void SetHideInFullscreen(bool enabled)
-        {
-            hideInFullscreen = enabled;
-            UpdateFullscreenVisibility();
-            SaveSettings();
-        }
-
-        private void UpdateFullscreenVisibility()
-        {
-            bool hide = hideInFullscreen && FullscreenApplication.IsForegroundFullscreen();
-            if (hiddenForFullscreen == hide) return;
-            hiddenForFullscreen = hide;
-            if (hide) Hide();
-            else Show();
+            overlay.Show("摸摸头 ♡");
         }
 
         internal void SetOpacityPercent(double percent)
         {
             Opacity = Math.Max(20, Math.Min(100, percent)) / 100;
             settingsDirty = true;
-        }
-
-        internal void SetSleepSeconds(int seconds)
-        {
-            scene.SleepSeconds = seconds;
-            SaveSettings();
         }
 
         internal bool TrySetNickname(string input, out string error)
@@ -495,7 +457,6 @@ namespace WheekKeys
         {
             Forms.ContextMenuStrip menu = new Forms.ContextMenuStrip();
             menu.Items.Add("桌宠设置…", null, delegate { OpenSettingsAtCursor(); });
-            menu.Items.Add("喂草", null, delegate { InteractLocally(true); });
             menu.Items.Add(new Forms.ToolStripSeparator());
             Forms.ToolStripMenuItem skins = new Forms.ToolStripMenuItem("切换外观");
             foreach (PetSkin skin in PetSkin.Available)
@@ -576,14 +537,9 @@ namespace WheekKeys
                 bool docked;
                 if (values.Length > 10 && bool.TryParse(values[10], out docked)) placement.IsDockedToTaskbar = docked;
                 if (values.Length > 11) scene.Desk = DeskSkin.FromId(values[11]);
-                int percent, seconds;
-                if (values.Length > 12) bool.TryParse(values[12], out hideInFullscreen);
+                int percent;
                 if (values.Length > 13 && int.TryParse(values[13], out percent) && percent >= 20 && percent <= 100)
                     Opacity = percent / 100.0;
-                if (values.Length > 14 && int.TryParse(values[14], out seconds)) scene.SleepSeconds = seconds;
-                if (values.Length > 17) today.Restore(values[15], values[16], values[17]);
-                bool glow;
-                if (values.Length > 18 && bool.TryParse(values[18], out glow)) scene.KeyboardGlowEnabled = glow;
             }
             catch { PlaceAtDefaultPosition(); }
         }
@@ -600,10 +556,8 @@ namespace WheekKeys
                     Width.ToString("R", CultureInfo.InvariantCulture), scene.ShowKeyLabels.ToString(), clickThrough.ToString(), scene.Skin.Id,
                     // Preserve the old setting's slot so the following fields keep their positions.
                     bool.FalseString, keyCount.ToString(CultureInfo.InvariantCulture), clickCount.ToString(CultureInfo.InvariantCulture), nickname,
-                    placement.IsDockedToTaskbar.ToString(), scene.Desk.Id, hideInFullscreen.ToString(),
-                    Math.Round(Opacity * 100).ToString(CultureInfo.InvariantCulture), SleepSeconds.ToString(CultureInfo.InvariantCulture),
-                    today.Day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), today.Keys.ToString(CultureInfo.InvariantCulture),
-                    today.Clicks.ToString(CultureInfo.InvariantCulture), scene.KeyboardGlowEnabled.ToString() });
+                    placement.IsDockedToTaskbar.ToString(), scene.Desk.Id, bool.FalseString,
+                    Math.Round(Opacity * 100).ToString(CultureInfo.InvariantCulture) });
                 if (File.Exists(settingsPath)) File.Replace(pending, settingsPath, null);
                 else File.Move(pending, settingsPath);
                 settingsDirty = false;

@@ -365,8 +365,6 @@ namespace WheekKeys
 
         internal void RefreshActivity()
         {
-            todayActivity.Text = String.Format("今日   按键 {0:N0} · 点击 {1:N0}", owner.Today.Keys, owner.Today.Clicks);
-            totalActivity.Text = String.Format("累计   按键 {0:N0} · 点击 {1:N0}", owner.KeyCount, owner.ClickCount);
             if (networkPage == null || networkPage.Visibility != Visibility.Visible) return;
             LocalPeers network = owner.Network;
             bool inRoom = network.Enabled;

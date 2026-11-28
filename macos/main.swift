@@ -6,45 +6,6 @@ func initialPetScale(_ savedScale: Double) -> Double {
     savedScale > 0 ? min(2.0, max(0.5, savedScale)) : 0.58
 }
 
-struct DailyActivity {
-    private(set) var day: String
-    private(set) var keys: UInt64
-    private(set) var clicks: UInt64
-    private var recentKeys: [TimeInterval] = []
-    private var lastFastCelebration: TimeInterval = -30
-
-    init(day: String, keys: UInt64, clicks: UInt64) {
-        self.day = day; self.keys = min(keys, UInt64(Int64.max)); self.clicks = min(clicks, UInt64(Int64.max))
-    }
-    static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        return "\(parts.year ?? 0)-\(parts.month ?? 0)-\(parts.day ?? 0)"
-    }
-    @discardableResult mutating func rollover(to newDay: String) -> Bool {
-        guard day != newDay else { return false }
-        day = newDay; keys = 0; clicks = 0; recentKeys.removeAll()
-        lastFastCelebration = -.infinity
-        return true
-    }
-    mutating func recordKey(at now: TimeInterval) -> Bool {
-        keys = min(UInt64(Int64.max), keys + 1)
-        if keys % 1000 != 0 {
-            guard now - lastFastCelebration >= 30 else { return false }
-            recentKeys.removeAll { now - $0 > 1 }
-            recentKeys.append(now)
-            guard recentKeys.count >= 10 else { return false }
-        }
-        recentKeys.removeAll(keepingCapacity: true)
-        lastFastCelebration = now
-        return true
-    }
-    mutating func recordClick() { clicks = min(UInt64(Int64.max), clicks + 1) }
-}
-
-func shouldShowPet(manuallyHidden: Bool, hideFullscreen: Bool, fullscreen: Bool) -> Bool {
-    !manuallyHidden && !(hideFullscreen && fullscreen)
-}
-
 private enum LoginAtStartup {
     private static let label = "io.github.gwtt.WheekKeys.login"
     private static var plist: URL {
@@ -114,16 +75,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     private var scale = 0.58
     private var clickThrough = false
     private var showLabels = true
-    private var keyboardGlow = false
     private let anonymousInput = AnonymousKeyboardInput()
     private var manuallyHidden = false
     private var inputTimer: Timer?
     private var heldModifiers = Set<UInt16>()
     private var countsDirty = false
-    private var today = DailyActivity(day: "", keys: 0, clicks: 0)
     private var opacity = 1.0
-    private var hideFullscreen = false
-    private var sleepSeconds = 30
     private var deskSkin = "meadow"
     private var packDirectory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/WheekKeys/skins", isDirectory: true) }
     private var keyCount: UInt64 = 0
@@ -138,22 +95,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         checkForUpdate()
         WheekPackLoader.loadInstalled(directory: packDirectory)
         opacity = defaults.object(forKey: "opacity") == nil ? 1 : min(1, max(0.2, defaults.double(forKey: "opacity")))
-        hideFullscreen = defaults.bool(forKey: "hideFullscreen")
-        sleepSeconds = defaults.object(forKey: "sleepSeconds") == nil ? 30 : defaults.integer(forKey: "sleepSeconds")
-        if ![0, 15, 30, 60].contains(sleepSeconds) { sleepSeconds = 30 }
         deskSkin = defaults.string(forKey: "deskSkin") ?? "meadow"
         if !["meadow", "peach", "mocha"].contains(deskSkin) { deskSkin = "meadow" }
-        today = DailyActivity(day: defaults.string(forKey: "countDay") ?? "",
-                              keys: UInt64(defaults.string(forKey: "todayKeys") ?? "0") ?? 0,
-                              clicks: UInt64(defaults.string(forKey: "todayClicks") ?? "0") ?? 0)
-        rolloverCounts()
         skinID = PetSkin.named(defaults.string(forKey: "skin")).id
         nickname = LocalPeers.normalizedNickname(defaults.string(forKey: "nickname") ?? "") ?? ""
         let savedScale = defaults.double(forKey: "scale")
         scale = initialPetScale(savedScale)
         clickThrough = defaults.bool(forKey: "clickThrough")
         showLabels = defaults.object(forKey: "showKeyLabels") as? Bool ?? true
-        keyboardGlow = defaults.bool(forKey: "keyboardGlow")
         keyCount = min(UInt64(Int64.max), UInt64(defaults.string(forKey: "keyCount") ?? "0") ?? 0)
         clickCount = min(UInt64(Int64.max), UInt64(defaults.string(forKey: "clickCount") ?? "0") ?? 0)
 
@@ -179,8 +128,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         pet.autoresizingMask = [.width, .height]
         pet.selectSkin(skinID)
         pet.showKeyLabels = showLabels
-        pet.keyboardGlowEnabled = keyboardGlow
-        pet.sleepDelay = sleepSeconds == 0 ? nil : TimeInterval(sleepSeconds)
         pet.deskSkinID = deskSkin
         pet.onOpenSettings = { [weak self] in self?.showSettings() }
         pet.onPetHead = { [weak self] in self?.pet.celebrate() }
@@ -196,8 +143,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             guard let self = self else { return }
             self.anonymousInput.refresh()
             self.refreshEventTap()
-            self.rolloverCounts()
-            self.updateVisibility()
             self.flushCounts()
             if self.settingsPopover?.isShown == true { self.refreshSettings() }
         }
@@ -261,7 +206,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
 
     private func populate(_ menu: NSMenu) {
         add("桌宠设置…", #selector(showSettingsFromMenu(_:)), to: menu)
-        add("喂草", #selector(feedGrass), to: menu)
         menu.addItem(.separator())
         let skins = NSMenu()
         for (index, title) in ["短毛", "长毛", "趴趴猪", "自定义"].enumerated() {
@@ -296,7 +240,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         add("退出", #selector(quit), to: menu)
     }
 
-    @objc private func feedGrass() { pet.feedGrass() }
     @objc private func selectSkin(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         applySkin(id)
@@ -341,10 +284,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         if settingsPopover?.isShown == true { return }
         if settingsController == nil {
             let created = PetSettingsViewController()
-            created.onFeedGrass = { [weak self] in
-                self?.settingsPopover?.performClose(nil)
-                self?.pet.feedGrass()
-            }
             created.onDropPack = { [weak self] in self?.installSkin(from: $0) }
             created.onInstallSkin = { [weak self] in self?.installSkin() }
             created.onDeleteSkin = { [weak self] in self?.deleteSkin() }
@@ -353,19 +292,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
                 self.opacity = value
                 self.window.alphaValue = value
                 self.defaults.set(value, forKey: "opacity")
-                self.updateFriends()
-            }
-            created.onFullscreenChange = { [weak self] value in
-                guard let self else { return }
-                self.hideFullscreen = value
-                self.defaults.set(value, forKey: "hideFullscreen")
-                self.updateVisibility()
-            }
-            created.onSleepChange = { [weak self] value in
-                guard let self else { return }
-                self.sleepSeconds = value
-                self.defaults.set(value, forKey: "sleepSeconds")
-                self.pet.sleepDelay = value == 0 ? nil : TimeInterval(value)
                 self.updateFriends()
             }
             created.onDeskSkinChange = { [weak self] value in
@@ -377,10 +303,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             created.onDownloadUpdate = { [weak self] in self?.downloadUpdate() }
             created.onSelectSkin = { [weak self] in self?.applySkin($0) }
             created.onScaleChange = { [weak self] in self?.resize(to: $0) }
-            created.onKeyboardGlowChange = { [weak self] value in
-                guard let self else { return }
-                self.keyboardGlow = value; self.defaults.set(value, forKey: "keyboardGlow"); self.pet.keyboardGlowEnabled = value
-            }
             created.onShowLabelsChange = { [weak self] value in
                 guard let self, self.showLabels != value else { return }
                 self.toggleLabels()
@@ -499,8 +421,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
                                     roomCode: peers.roomCode, roomConnected: peers.roomConnected, nickname: nickname,
                                     shareActivity: peers.shareActivity, shareActivityAvailable: peers.shareActivityAvailable,
                                     roomPublic: peers.roomPublic)
-        settingsController?.refreshOptions(opacity: opacity, fullscreen: hideFullscreen, sleep: sleepSeconds, desk: deskSkin,
-                                           todayKeys: today.keys, todayClicks: today.clicks, totalKeys: keyCount, totalClicks: clickCount, keyboardGlow: keyboardGlow)
+        settingsController?.refreshOptions(opacity: opacity, desk: deskSkin)
     }
     private func updateFriends() {
         guard let window = window else { return }
@@ -513,29 +434,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         updateVisibility()
     }
     private func updateVisibility() {
-        let shouldShow = shouldShowPet(manuallyHidden: manuallyHidden, hideFullscreen: hideFullscreen, fullscreen: hideFullscreen && frontAppIsFullscreen())
+        let shouldShow = !manuallyHidden
         guard shouldShow != window.isVisible else { return }
         if shouldShow { window.orderFrontRegardless() } else { window.orderOut(nil) }
         updateFriends()
-    }
-    private func frontAppIsFullscreen() -> Bool {
-        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
-        let displays = NSScreen.screens.compactMap { screen -> CGRect? in
-            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
-            return CGDisplayBounds(CGDirectDisplayID(number.uint32Value))
-        }
-        for info in windows {
-            guard (info[kCGWindowOwnerPID as String] as? Int32) == app.processIdentifier,
-                  (info[kCGWindowLayer as String] as? Int) == 0,
-                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
-                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary), !rect.isEmpty else { continue }
-            return displays.contains { display in
-                abs(rect.minX - display.minX) < 2 && abs(rect.minY - display.minY) < 2 &&
-                abs(rect.width - display.width) < 2 && abs(rect.height - display.height) < 2
-            }
-        }
-        return false
     }
     @objc private func requestInputPermission() {
         if CGRequestListenEventAccess() { refreshEventTap(); anonymousInput.refresh() } else { openInputSettings() }
@@ -593,19 +495,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         guard countsDirty else { return }
         defaults.set(String(keyCount), forKey: "keyCount")
         defaults.set(String(clickCount), forKey: "clickCount")
-        defaults.set(today.day, forKey: "countDay")
-        defaults.set(String(today.keys), forKey: "todayKeys")
-        defaults.set(String(today.clicks), forKey: "todayClicks")
         countsDirty = false
     }
-    private func rolloverCounts() {
-        if today.rollover(to: DailyActivity.dayKey(Date())) { countsDirty = true }
-    }
     private func incrementKeyCount() {
-        rolloverCounts()
-        if today.recordKey(at: ProcessInfo.processInfo.systemUptime), window.isVisible {
-            pet.celebrate(today.keys % 1000 == 0 ? "今天已敲 \(today.keys) 键 ♡" : "小爪跟上啦！")
-        }
         keyCount = min(UInt64(Int64.max), keyCount + 1)
         countsDirty = true
     }
@@ -650,8 +542,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             let dy = Double(event.getIntegerValueField(.mouseEventDeltaY))
             pet.localMouseMove(dx: dx, dy: dy)
         case .leftMouseDown, .rightMouseDown:
-            rolloverCounts()
-            today.recordClick()
             clickCount = min(UInt64(Int64.max), clickCount + 1)
             countsDirty = true
             pet.clickMouse(right: type == .rightMouseDown)
