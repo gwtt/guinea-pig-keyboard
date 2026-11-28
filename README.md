@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/gwtt/guinea-pig-keyboard/releases"><img src="docs/badges/version.svg" alt="仓库版本 v0.2.1"></a>
+  <a href="https://github.com/gwtt/guinea-pig-keyboard/releases"><img src="docs/badges/version.svg" alt="仓库版本 v0.2.2"></a>
   <a href="https://github.com/gwtt/guinea-pig-keyboard/actions/workflows/windows.yml"><img src="https://github.com/gwtt/guinea-pig-keyboard/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows 与 macOS 实时构建状态"></a>
 </p>
 
