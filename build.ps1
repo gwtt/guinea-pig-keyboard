@@ -32,6 +32,13 @@ try {
     foreach ($asset in Get-ChildItem -LiteralPath 'assets/drawn' -Filter '*.png' -File) {
         $arguments += "/resource:assets/drawn/$($asset.Name),drawn-$($asset.Name)"
     }
+    if (Test-Path -LiteralPath 'assets/cursors') {
+        foreach ($dir in Get-ChildItem -LiteralPath 'assets/cursors' -Directory) {
+            foreach ($asset in Get-ChildItem -LiteralPath $dir.FullName -Filter '*.png' -File) {
+                $arguments += "/resource:assets/cursors/$($dir.Name)/$($asset.Name),cursor-$($dir.Name)-$($asset.Name)"
+            }
+        }
+    }
     $sources = (Get-ChildItem -LiteralPath 'src' -Filter '*.cs').FullName
     & $compiler @arguments @sources
     if ($LASTEXITCODE -ne 0) { throw 'Compilation failed. Close WheekKeys before rebuilding.' }

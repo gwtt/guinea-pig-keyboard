@@ -88,6 +88,7 @@ namespace WheekKeys
         private bool ready;
         private PetSettings settingsWindow;
         private Drawing.Icon ownedIcon;
+        private CursorTheme cursorTheme = CursorTheme.SystemDefault;
 
         public PetWindow()
         {
@@ -307,6 +308,7 @@ namespace WheekKeys
 
         internal PetSkin ActiveSkin { get { return scene.Skin; } }
         internal DeskSkin ActiveDeskSkin { get { return scene.Desk; } }
+        internal CursorTheme ActiveCursorTheme { get { return cursorTheme; } }
         internal bool LabelsVisible { get { return scene.ShowKeyLabels; } }
         internal bool MouseClickThrough { get { return clickThrough; } }
         internal double PetWidth { get { return Width; } }
@@ -428,6 +430,23 @@ namespace WheekKeys
             SaveSettings();
         }
 
+        internal string SetCursorTheme(CursorTheme theme)
+        {
+            if (theme == null) theme = CursorTheme.SystemDefault;
+            try
+            {
+                string message = CursorTheme.Apply(theme, DataDirectory);
+                cursorTheme = theme;
+                RefreshTrayMenu();
+                SaveSettings();
+                return message;
+            }
+            catch (Exception ex)
+            {
+                return "切换指针失败：" + ex.Message;
+            }
+        }
+
         internal void SetWidth(double width)
         {
             width = Math.Max(MinimumPetWidth, Math.Min(600, width));
@@ -484,6 +503,16 @@ namespace WheekKeys
                 desks.DropDownItems.Add(item);
             }
             menu.Items.Add(desks);
+            Forms.ToolStripMenuItem cursors = new Forms.ToolStripMenuItem("鼠标指针");
+            foreach (CursorTheme theme in CursorTheme.All)
+            {
+                CursorTheme currentTheme = theme;
+                Forms.ToolStripMenuItem item = new Forms.ToolStripMenuItem(currentTheme.Name);
+                item.Checked = cursorTheme.Id == currentTheme.Id;
+                item.Click += delegate { SetCursorTheme(currentTheme); };
+                cursors.DropDownItems.Add(item);
+            }
+            menu.Items.Add(cursors);
             foreach (MenuAction entry in MenuActions())
             {
                 MenuAction current = entry;
@@ -540,6 +569,7 @@ namespace WheekKeys
                 int percent;
                 if (values.Length > 13 && int.TryParse(values[13], out percent) && percent >= 20 && percent <= 100)
                     Opacity = percent / 100.0;
+                if (values.Length > 14) cursorTheme = CursorTheme.FromId(values[14]);
             }
             catch { PlaceAtDefaultPosition(); }
         }
@@ -557,7 +587,7 @@ namespace WheekKeys
                     // Preserve the old setting's slot so the following fields keep their positions.
                     bool.FalseString, keyCount.ToString(CultureInfo.InvariantCulture), clickCount.ToString(CultureInfo.InvariantCulture), nickname,
                     placement.IsDockedToTaskbar.ToString(), scene.Desk.Id, bool.FalseString,
-                    Math.Round(Opacity * 100).ToString(CultureInfo.InvariantCulture) });
+                    Math.Round(Opacity * 100).ToString(CultureInfo.InvariantCulture), cursorTheme.Id });
                 if (File.Exists(settingsPath)) File.Replace(pending, settingsPath, null);
                 else File.Move(pending, settingsPath);
                 settingsDirty = false;

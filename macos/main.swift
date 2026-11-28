@@ -82,6 +82,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     private var countsDirty = false
     private var opacity = 1.0
     private var deskSkin = "meadow"
+    private var cursorThemeID = "system"
     private var packDirectory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/WheekKeys/skins", isDirectory: true) }
     private var keyCount: UInt64 = 0
     private var clickCount: UInt64 = 0
@@ -97,6 +98,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         opacity = defaults.object(forKey: "opacity") == nil ? 1 : min(1, max(0.2, defaults.double(forKey: "opacity")))
         deskSkin = defaults.string(forKey: "deskSkin") ?? "meadow"
         if !["meadow", "peach", "mocha"].contains(deskSkin) { deskSkin = "meadow" }
+        cursorThemeID = CursorTheme.named(defaults.string(forKey: "cursorTheme")).id
+        if cursorThemeID != "system" {
+            _ = CursorThemeApplier.apply(CursorTheme.named(cursorThemeID))
+        }
         skinID = PetSkin.named(defaults.string(forKey: "skin")).id
         nickname = LocalPeers.normalizedNickname(defaults.string(forKey: "nickname") ?? "") ?? ""
         let savedScale = defaults.double(forKey: "scale")
@@ -300,6 +305,17 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
                 self.defaults.set(value, forKey: "deskSkin")
                 self.pet.deskSkinID = value
             }
+            created.onCursorThemeChange = { [weak self] value in
+                guard let self else { return "" }
+                let theme = CursorTheme.named(value)
+                let result = CursorThemeApplier.apply(theme)
+                if result.ok {
+                    self.cursorThemeID = theme.id
+                    self.defaults.set(theme.id, forKey: "cursorTheme")
+                }
+                self.refreshSettings()
+                return result.message
+            }
             created.onDownloadUpdate = { [weak self] in self?.downloadUpdate() }
             created.onSelectSkin = { [weak self] in self?.applySkin($0) }
             created.onScaleChange = { [weak self] in self?.resize(to: $0) }
@@ -421,7 +437,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
                                     roomCode: peers.roomCode, roomConnected: peers.roomConnected, nickname: nickname,
                                     shareActivity: peers.shareActivity, shareActivityAvailable: peers.shareActivityAvailable,
                                     roomPublic: peers.roomPublic)
-        settingsController?.refreshOptions(opacity: opacity, desk: deskSkin)
+        settingsController?.refreshOptions(opacity: opacity, desk: deskSkin, cursor: cursorThemeID)
     }
     private func updateFriends() {
         guard let window = window else { return }

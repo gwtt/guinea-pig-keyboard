@@ -35,6 +35,8 @@ namespace WheekKeys
         private readonly PetWindow owner;
         private readonly Dictionary<string, Button> skinButtons = new Dictionary<string, Button>();
         private readonly Dictionary<string, Button> deskSkinButtons = new Dictionary<string, Button>();
+        private readonly Dictionary<string, Button> cursorThemeButtons = new Dictionary<string, Button>();
+        private readonly TextBlock cursorStatus = Label(10.5, Muted);
         private readonly UniformGrid skinGrid = new UniformGrid { Columns = 3, Rows = 0, Margin = new Thickness(-2, 6, -2, -2) };
         private readonly TextBlock importStatus = Label(10.5, Muted), updateStatus = Label(10.5, Muted);
         private ToggleButton startupSwitch;
@@ -148,6 +150,7 @@ namespace WheekKeys
             StackPanel content = new StackPanel { Margin = new Thickness(0, 2, 0, 2) };
             content.Children.Add(BuildSkinsCard());
             content.Children.Add(BuildDeskSkinsCard());
+            content.Children.Add(BuildCursorThemesCard());
             return new ScrollViewer
             {
                 Content = content,
@@ -447,6 +450,61 @@ namespace WheekKeys
                 grid.Children.Add(button);
             }
             Border card = Card("键鼠皮肤", grid);
+            card.Margin = new Thickness(0, 9, 0, 0);
+            return card;
+        }
+
+        private Border BuildCursorThemesCard()
+        {
+            StackPanel body = new StackPanel();
+            UniformGrid grid = new UniformGrid { Columns = 2, Rows = 0, Margin = new Thickness(-2, 0, -2, -2) };
+            foreach (CursorTheme theme in CursorTheme.All)
+            {
+                CursorTheme current = theme;
+                StackPanel content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
+                if (!current.IsSystem)
+                {
+                    BitmapSource preview = LoadSettingsImage("cursor-" + current.Id + "-arrow.png");
+                    if (preview != null)
+                        content.Children.Add(new Image { Source = preview, Width = 18, Height = 18, Stretch = Stretch.Uniform });
+                }
+                else
+                {
+                    content.Children.Add(new Border
+                    {
+                        Width = 14, Height = 14, CornerRadius = new CornerRadius(7), Margin = new Thickness(2, 0, 2, 0),
+                        Background = Paper2, BorderBrush = Muted, BorderThickness = new Thickness(1)
+                    });
+                }
+                content.Children.Add(new TextBlock
+                {
+                    Text = current.Name, FontSize = 10.5, VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = Ink, Margin = new Thickness(6, 0, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                Button button = MakeButton(content, Paper, Ink, double.NaN, 32);
+                button.HorizontalContentAlignment = HorizontalAlignment.Left;
+                button.Padding = new Thickness(7, 2, 5, 2);
+                button.Margin = new Thickness(2);
+                button.Tag = current.Id;
+                button.ToolTip = current.Description;
+                AutomationProperties.SetAutomationId(button, "cursor-" + current.Id);
+                AutomationProperties.SetName(button, current.Name);
+                button.Click += delegate
+                {
+                    string message = owner.SetCursorTheme(current);
+                    cursorStatus.Text = message;
+                    cursorStatus.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
+                    RefreshState();
+                };
+                cursorThemeButtons[current.Id] = button;
+                grid.Children.Add(button);
+            }
+            body.Children.Add(grid);
+            cursorStatus.TextWrapping = TextWrapping.Wrap;
+            cursorStatus.Margin = new Thickness(1, 6, 1, 0);
+            cursorStatus.Text = "仅修改当前用户指针，随时可切回「系统默认」";
+            body.Children.Add(cursorStatus);
+            Border card = Card("鼠标指针", body);
             card.Margin = new Thickness(0, 9, 0, 0);
             return card;
         }
@@ -785,6 +843,16 @@ namespace WheekKeys
                 button.BorderBrush = selected ? Sage : Paper2;
                 button.BorderThickness = new Thickness(selected ? 1.4 : 1);
                 button.ToolTip = selected ? desk.Name + "（当前）" : desk.Name;
+            }
+            foreach (CursorTheme theme in CursorTheme.All)
+            {
+                Button button;
+                if (!cursorThemeButtons.TryGetValue(theme.Id, out button)) continue;
+                bool selected = owner.ActiveCursorTheme.Id == theme.Id;
+                button.Background = selected ? SageSoft : Paper;
+                button.BorderBrush = selected ? Sage : Paper2;
+                button.BorderThickness = new Thickness(selected ? 1.4 : 1);
+                button.ToolTip = selected ? theme.Name + "（当前）" : theme.Description;
             }
         }
 

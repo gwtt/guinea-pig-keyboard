@@ -98,6 +98,7 @@ final class PetSettingsViewController: NSViewController {
     var onDeleteSkin: (() -> Void)?
     var onOpacityChange: ((Double) -> Void)?
     var onDeskSkinChange: ((String) -> Void)?
+    var onCursorThemeChange: ((String) -> String)?
     var onSaveNickname: ((String) -> Bool)?
     var onScaleChange: ((Double) -> Void)?
     var onShowLabelsChange: ((Bool) -> Void)?
@@ -114,8 +115,11 @@ final class PetSettingsViewController: NSViewController {
 
     private var skinButtons: [String: NSButton] = [:]
     private var deskButtons: [String: NSButton] = [:]
+    private var cursorButtons: [String: NSButton] = [:]
     private var activeSkinID: String?
     private var activeDeskID = "meadow"
+    private var activeCursorID = "system"
+    private let cursorStatusLabel = NSTextField(wrappingLabelWithString: "仅修改当前用户指针，随时可切回「系统默认」")
     private lazy var removeSkinButton = controlButton("删除当前外观", action: #selector(deleteSkin))
     private let skinCategory = NSSegmentedControl(labels: ["短毛", "长毛", "趴趴猪"], trackingMode: .selectOne, target: nil, action: nil)
     private let skinContainer = FlippedView()
@@ -268,8 +272,16 @@ final class PetSettingsViewController: NSViewController {
         groupCode.layer?.masksToBounds = true
         add(groupCode, x: 142, top: 14, width: 124, height: 124, to: qqCard)
 
+        let appearanceScroll = NSScrollView()
+        appearanceScroll.drawsBackground = false
+        appearanceScroll.hasVerticalScroller = true
+        appearanceScroll.autohidesScrollers = true
+        let appearanceDocument = FlippedView(frame: NSRect(x: 0, y: 0, width: 280, height: 486))
+        appearanceScroll.documentView = appearanceDocument
+        add(appearanceScroll, x: 0, top: 0, width: 280, height: 352, to: appearancePage)
+
         let skinCard = cardView()
-        add(skinCard, x: 0, top: 4, width: 280, height: 244, to: appearancePage)
+        add(skinCard, x: 0, top: 4, width: 280, height: 244, to: appearanceDocument)
         let coatLabel = sectionLabel("豚鼠毛色")
         coatLabel.textColor = darkBrown
         add(coatLabel, x: 12, top: 10, width: 120, height: 18, to: skinCard)
@@ -285,7 +297,7 @@ final class PetSettingsViewController: NSViewController {
         rebuildSkinButtons()
 
         let deskCard = cardView()
-        add(deskCard, x: 0, top: 256, width: 280, height: 84, to: appearancePage)
+        add(deskCard, x: 0, top: 256, width: 280, height: 84, to: appearanceDocument)
         let deskLabel = sectionLabel("键鼠皮肤")
         deskLabel.textColor = darkBrown
         add(deskLabel, x: 12, top: 10, width: 120, height: 18, to: deskCard)
@@ -300,6 +312,33 @@ final class PetSettingsViewController: NSViewController {
             deskButtons[item.0] = button
         }
         refreshDeskSelection()
+
+        let cursorCard = cardView()
+        add(cursorCard, x: 0, top: 348, width: 280, height: 134, to: appearanceDocument)
+        let cursorLabel = sectionLabel("鼠标指针")
+        cursorLabel.textColor = darkBrown
+        add(cursorLabel, x: 12, top: 10, width: 120, height: 18, to: cursorCard)
+        for (index, theme) in CursorTheme.all.enumerated() {
+            let button = NSButton(title: theme.name, target: self, action: #selector(selectCursor(_:)))
+            button.identifier = NSUserInterfaceItemIdentifier(theme.id)
+            button.font = .systemFont(ofSize: 11)
+            button.isBordered = false
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 8
+            button.toolTip = theme.summary
+            if let img = CursorTheme.previewImage(for: theme.id) {
+                button.image = img
+                button.imagePosition = .imageLeading
+            }
+            let col = index % 2
+            let row = index / 2
+            add(button, x: 12 + CGFloat(col) * 130, top: 36 + CGFloat(row) * 34, width: 126, height: 30, to: cursorCard)
+            cursorButtons[theme.id] = button
+        }
+        cursorStatusLabel.font = .systemFont(ofSize: 10)
+        cursorStatusLabel.textColor = mutedBrown
+        add(cursorStatusLabel, x: 12, top: 106, width: 256, height: 22, to: cursorCard)
+        refreshCursorSelection()
 
         let displayCard = cardView()
         add(displayCard, x: 0, top: 4, width: 280, height: 132, to: settingsPage)
@@ -515,16 +554,28 @@ final class PetSettingsViewController: NSViewController {
         }
     }
 
-    func refreshOptions(opacity: Double, desk: String) {
+    func refreshOptions(opacity: Double, desk: String, cursor: String = "system") {
         opacitySlider.doubleValue = opacity
         opacityValue.stringValue = "\(Int((opacity * 100).rounded()))%"
         activeDeskID = desk
+        activeCursorID = cursor
         refreshDeskSelection()
+        refreshCursorSelection()
     }
 
     private func refreshDeskSelection() {
         for (id, button) in deskButtons {
             let selected = id == activeDeskID
+            button.layer?.borderWidth = selected ? 1.5 : 0.8
+            button.layer?.borderColor = (selected ? NSColor(calibratedRed: 126 / 255, green: 148 / 255, blue: 105 / 255, alpha: 1) : mutedBrown.withAlphaComponent(0.25)).cgColor
+            button.layer?.backgroundColor = (selected ? sage : paper).cgColor
+            button.contentTintColor = darkBrown
+        }
+    }
+
+    private func refreshCursorSelection() {
+        for (id, button) in cursorButtons {
+            let selected = id == activeCursorID
             button.layer?.borderWidth = selected ? 1.5 : 0.8
             button.layer?.borderColor = (selected ? NSColor(calibratedRed: 126 / 255, green: 148 / 255, blue: 105 / 255, alpha: 1) : mutedBrown.withAlphaComponent(0.25)).cgColor
             button.layer?.backgroundColor = (selected ? sage : paper).cgColor
@@ -584,6 +635,12 @@ final class PetSettingsViewController: NSViewController {
         activeDeskID = id
         refreshDeskSelection()
         onDeskSkinChange?(id)
+    }
+    @objc private func selectCursor(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue else { return }
+        if let message = onCursorThemeChange?(id), !message.isEmpty {
+            cursorStatusLabel.stringValue = message
+        }
     }
     @objc private func openSupport() { NSWorkspace.shared.open(URL(string: "https://afdian.com/a/guinea_pig_garden")!) }
 
